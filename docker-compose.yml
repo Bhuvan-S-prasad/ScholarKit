@@ -14,5 +14,3 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    # Note: This is disposable local infrastructure for Prisma shadow DB and tests.
-    # Dev/Prod persistent database is hosted on Neon.
