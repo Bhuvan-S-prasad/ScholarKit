@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
 import { createPaperCommand } from "./commands/paper.js";
+import { createReviewCommand } from "./commands/review.js";
+import { createNewsletterCommand } from "./commands/newsletter.js";
 import { colors } from "./utils/output.js";
 
 const program = new Command();
@@ -12,6 +14,8 @@ program
 
 // Register Subcommands
 program.addCommand(createPaperCommand());
+program.addCommand(createReviewCommand());
+program.addCommand(createNewsletterCommand());
 
 // Top-level help banner
 if (!process.argv.slice(2).length) {
