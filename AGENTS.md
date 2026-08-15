@@ -28,7 +28,7 @@ This project follows a **shared-core pattern**. The rules that make that pattern
 
 - **`packages/core` has no I/O concerns.** No HTTP, no CLI parsing, no direct `PrismaClient` construction, no hardcoded API keys. It exports pure(ish) functions that take validated input and return validated output. Every adapter (`cli`, `local-mcp`, `remote-mcp`) calls into `core` — logic never gets duplicated in an adapter "just this once."
 - **Zod is the runtime contract.** Every operation's input and output is validated against a Zod schema in `packages/core/src/schemas.ts`, including LLM-generated output. Nothing crosses an operation boundary unvalidated.
-- **LLM-backed operations use an injected client.** `extraction.ts`, `analysis.ts`, and the classify/rank functions in `literature.ts` take a model client as a parameter (see `operations/llm-client.ts`), never import the Anthropic SDK and call it inline. This is what keeps `core`'s test suite from needing a live API key.
+- **LLM-backed operations use an injected client.** `extraction.ts`, `analysis.ts`, and the classify/rank functions in `literature.ts` take a model client as a parameter (see `operations/llm-client.ts`), never import an LLM provider SDK directly inside `core` operation files. This is what keeps `core`'s test suite from needing a live API key.
 - **Structured output from the LLM is validated, not trusted.** Prompt for JSON matching the target Zod schema → parse → validate. One retry with the validation error fed back into the prompt on failure. Two failures → typed error, never silently-wrong data.
 - **`packages/db` owns the Prisma client lifecycle; `core` doesn't.** `core` depends on the Prisma-generated types, not on constructing its own client. Each app (`cli`, `local-mcp`, `remote-mcp`) owns its own client instance/connection lifecycle via `packages/db`.
 - **Papers and literature review entries do not go through the review/approval state machine.** Only `Newsletter`/digest records do (`draft → in_review → approved → scheduled → sending → sent`, with `changes_requested` and `failed → retry` branches). Don't add approval gates to paper ingestion/extraction — that's scope creep from the content-hub project this pattern was originally built for.
@@ -44,7 +44,8 @@ This project follows a **shared-core pattern**. The rules that make that pattern
 | Validation                | Zod                                  | Single source of truth for runtime shapes                                                                                                                                                   |
 | Database                  | **Neon** (serverless Postgres)       | One Postgres story for dev and prod via Neon branches — no SQLite anywhere                                                                                                                  |
 | ORM                       | **Prisma**                           | `schema.prisma` in `packages/db`. Use the **pooled** connection string at runtime, the **direct** connection string for `prisma migrate`                                                    |
-| Containerization          | **Docker / Docker Compose**          | `docker-compose.yml` at repo root runs a disposable local Postgres for tests + Prisma shadow DB; `apps/remote-mcp` ships a `Dockerfile` for deployment. Does **not** replace Neon — see §6a |                                                                                                                                  |
+| Containerization          | **Docker / Docker Compose**          | `docker-compose.yml` at repo root runs a disposable local Postgres for tests + Prisma shadow DB; `apps/remote-mcp` ships a `Dockerfile` for deployment. Does **not** replace Neon — see §6a |
+| LLM Provider              | **OpenRouter** (Injected Client)     | Supports Claude, GPT, Llama, and reasoning models via unified OpenRouter endpoint (`OPENROUTER_API_KEY`)                                                                                   |
 | MCP transport (remote)    | Hono, streamable HTTP                | `apps/remote-mcp`                                                                                                                                                                           |
 | Auth (remote MCP clients) | Clerk                                | Authenticates MCP _clients_, unrelated to Telegram                                                                                                                                          |
 | Delivery                  | Telegram Bot API                     | Single delivery target for v1 — no other platforms in scope                                                                                                                                 |
@@ -170,66 +171,88 @@ If a task seems to call for a database inside Docker for anything other than tes
 
 ---
 
-## 7. Build order (current status: not yet started)
+## 7. Build order (sequenced by adapter phase)
 
-Work through in this order — each step is meant to prove the previous one before adding complexity:
+Work through each phase sequentially — each phase completes an entire adapter surface on top of the shared core before moving to the next:
 
-1. [x] `core` + `db` scaffolding — schemas, ingestion/extraction Zod schemas, stub extraction with fixed test data (no LLM call yet). Stand up the Neon project, write `schema.prisma`, run first `prisma migrate dev`. Add `docker-compose.yml` with the local Postgres container and wire `shadowDatabaseUrl` to it.
-2. [ ] arXiv ingestion (`ingestPaperFromArxiv`) — no auth, proves ingest → store end to end.
-3. [ ] LLM-backed extraction — wire the injectable model client, validate against `PaperExtractionSchema`. Highest-risk piece; get it solid before building on top.
-4. [ ] `cli` — enough commands to ingest/extract papers locally.
-5. [ ] `literature.ts` — search, dedupe, classify, rank, build review.
-6. [ ] Telegram publish path — `sendMessage` (port from prior SendKit work if available), `sendDigest` chunking + rate pacing.
-7. [ ] Subscriber webhook — `/start`/`/stop`, `Subscriber` table.
-8. [ ] `newsletter.ts` + scheduling — generate, personalize, review workflow, scheduled send.
-9. [ ] `local-mcp` — expose operations as agent tools.
-10. [ ] `remote-mcp` + Clerk auth — **only if** multi-client remote access is actually needed (see open decisions below; may be skippable for a solo-researcher deployment). Write `apps/remote-mcp/Dockerfile` as part of this step, not before — no point packaging a deployment target that doesn't exist yet.
-11. [ ] `skill` — write once the tool surface and confidence-handling conventions are stable.
+### Phase 0: Foundation (Completed)
+- [x] `core` + `db` scaffolding — schemas, Zod validation contracts, stub extraction, Neon Postgres schema setup, and Prisma migrations.
 
-Update the checkboxes in this file as steps complete. Don't jump ahead to a later step's polish while an earlier step is still unproven — e.g. don't build rate-limit pacing for Telegram before extraction is validated end to end, and don't write the `remote-mcp` Dockerfile before `remote-mcp` itself exists.
+### Phase 1: CLI (`packages/cli`)
+Complete the core pipeline and expose all operations through local CLI commands:
+- [ ] **Paper Ingestion & Extraction**:
+  - `scholarkit paper ingest <arxiv-id | url>` — fetch arXiv Atom feed, validate, and persist in Neon DB.
+  - `scholarkit paper extract <paper-id>` — run LLM-backed structured extraction, score confidence, and store in DB.
+  - `scholarkit paper analyze <paper-ids...>` — compare methodology, findings, and identify research gaps across papers.
+- [ ] **Literature Review**:
+  - `scholarkit review init <title>` — create new literature review project.
+  - `scholarkit review rank <project-id>` — classify and rank ingested papers against project criteria with LLM.
+  - `scholarkit review draft <project-id>` — generate structured literature review draft.
+- [ ] **Newsletter & Telegram Publishing**:
+  - `scholarkit newsletter draft <title>` — create newsletter draft from recent papers or reviews.
+  - `scholarkit newsletter transition <id> <action>` — advance review state machine (`submit`, `approve`, `schedule`).
+  - `scholarkit newsletter send <id>` — send digest to Telegram with rate pacing and 4096-char chunking.
+
+### Phase 2: Local MCP Server (`packages/local-mcp`)
+Expose all validated core domain operations as agent tools over stdio:
+- [ ] Stdio MCP Server setup using `@modelcontextprotocol/sdk`.
+- [ ] Register Paper Tools (`ingest_paper`, `extract_paper`, `analyze_papers`).
+- [ ] Register Literature Review Tools (`create_review_project`, `rank_papers`, `draft_literature_review`).
+- [ ] Register Newsletter & Workflow Tools (`draft_newsletter`, `transition_newsletter_status`, `send_newsletter`).
+- [ ] Connect and test with local IDE / Claude Desktop / Antigravity via `mcp.json`.
+
+### Phase 3: Remote MCP Server (`apps/remote-mcp`)
+Build multi-client remote MCP deployment:
+- [ ] Hono app with streamable HTTP transport for remote MCP clients.
+- [ ] Clerk authentication middleware for MCP client access control.
+- [ ] Telegram Webhooks for subscriber `/start` & `/stop` management.
+- [ ] Background polling worker / scheduler for scheduled sends.
+- [ ] `apps/remote-mcp/Dockerfile` multi-stage build for container deployment.
+
+### Phase 4: Agent Skill (`skills/scholarkit-skill`)
+- [ ] Write `SKILL.md` documenting tool usage patterns, confidence threshold handling, and workflow state machines for coding agents.
 
 ---
 
 ## 8. Open decisions (resolve before the relevant build step, not before)
 
-- **Single-user tool vs. multi-subscriber newsletter?** Determines whether `Subscriber`/`DeliveryLog`/webhook/`remote-mcp`+Clerk are needed at all in v1. Default assumption until told otherwise: **build solo-mode first** (steps 1–5, 9), defer the subscriber/delivery machinery.
+- **Single-user tool vs. multi-subscriber newsletter?** Determines whether `Subscriber`/`DeliveryLog`/webhook/`remote-mcp`+Clerk are needed at all in v1. Default assumption until told otherwise: **build solo-mode first** (CLI and Local MCP), defer the subscriber/delivery machinery.
 - **Channel broadcast vs. per-subscriber DM** for Telegram — DM is implied by "personalize" being in the newsletter spec, but channel is the faster MVP if personalization can wait.
 - Paper sources beyond arXiv (Semantic Scholar, PubMed) — not needed for v1.
 - PDF handling — local upload only, or also fetch-by-URL?
-- Extraction confidence threshold — exact cutoff for "flag to human" not yet set.
+- Extraction confidence threshold — exact cutoff for "flag to human" not yet set (defaults to 0.75).
 - Node vs. edge for `remote-mcp` — defaults to Node/Docker (see §3); only revisit if there's a concrete reason.
-
-If you're an agent picking up work and one of these blocks the next step, ask rather than guessing — these are product decisions, not implementation details.
 
 ---
 
-## 9. Commands (fill in once scaffolded)
+## 9. Commands
 
 ```bash
 # install
-pnpm install   # or npm/yarn — confirm which once package.json exists
+bun install
 
 # local test/shadow database (Docker)
 docker compose up -d          # start disposable local Postgres for tests + Prisma shadow DB
 docker compose down -v        # stop and wipe it — safe, it holds no real data
 
 # db (Neon — dev/prod)
-pnpm --filter db prisma migrate dev      # local schema changes, uses shadowDatabaseUrl -> Docker Postgres
-pnpm --filter db prisma migrate deploy   # apply migrations in CI/deploy, direct Neon connection string
-pnpm --filter db prisma generate         # regenerate client after schema edits
+bun run --filter @scholarkit/db generate         # regenerate Prisma client after schema edits
+bun run --filter @scholarkit/db migrate:dev      # apply schema changes to Neon
+bun run --filter @scholarkit/db studio           # open Prisma Studio DB viewer
 
-# dev
-pnpm --filter cli dev
-pnpm --filter local-mcp dev
-pnpm --filter remote-mcp dev
+# cli dev
+bun run dev:cli --help
+bun run dev:cli paper ingest 2312.12456
 
-# remote-mcp container (once Dockerfile exists — build step 10)
+# local mcp
+bun run --filter @scholarkit/local-mcp dev
+
+# remote mcp
+bun run --filter @scholarkit/remote-mcp dev
 docker build -t scholarkit-remote-mcp apps/remote-mcp
 docker run --env-file apps/remote-mcp/.env -p 3000:3000 scholarkit-remote-mcp
 
 # test
-pnpm test               # core operations should be testable with mocked llm-client, no live API key needed
-                         # db-integration tests target the Docker Compose Postgres, not Neon
+bun test
 ```
 
-Update this section with real scripts as soon as `package.json` files exist — don't leave it aspirational once the project is running.
