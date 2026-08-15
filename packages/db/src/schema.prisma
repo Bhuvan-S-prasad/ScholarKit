@@ -1,0 +1,210 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+enum PaperSource {
+  arxiv
+  doi
+  pdf_upload
+  url
+}
+
+enum PaperStatus {
+  ingested
+  extracting
+  extracted
+  analyzed
+  archived
+}
+
+enum ContentType {
+  paper_note
+  literature_review
+  newsletter
+  digest
+}
+
+enum ReviewStatus {
+  draft
+  in_review
+  changes_requested
+  approved
+  scheduled
+  sending
+  sent
+  failed
+}
+
+enum DeliveryTarget {
+  telegram_dm
+  telegram_channel
+  telegram_group
+}
+
+enum LitClassification {
+  highly_relevant
+  relevant
+  background
+  irrelevant
+}
+
+// ============================================================================
+// Research Paper Domain Models
+// ============================================================================
+
+model Paper {
+  id            String      @id @default(cuid())
+  title         String
+  authors       String[]
+  abstract      String      @db.Text
+  publishedDate String
+  source        PaperSource
+  sourceId      String      @unique
+  url           String
+  pdfUrl        String?
+  categories    String[]    @default([])
+  status        PaperStatus @default(ingested)
+  rawContent    String?     @db.Text
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  extraction       PaperExtraction?
+  litReviewEntries LitReviewEntry[]
+
+  @@index([source, sourceId])
+  @@index([status])
+}
+
+model PaperExtraction {
+  id              String   @id @default(cuid())
+  paperId         String   @unique
+  paper           Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  methodology     Json
+  keyFindings     String[]
+  contributions   String[]
+  limitations     String[]
+  confidence      Float
+  extractionNotes String?  @db.Text
+  extractedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================================
+// Literature Review Domain Models
+// ============================================================================
+
+model LitReviewProject {
+  id                String   @id @default(cuid())
+  title             String
+  description       String?  @db.Text
+  query             String
+  inclusionCriteria String[] @default([])
+  exclusionCriteria String[] @default([])
+  status            String   @default("active")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  entries LitReviewEntry[]
+}
+
+model LitReviewEntry {
+  id             String            @id @default(cuid())
+  projectId      String
+  project        LitReviewProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  paperId        String
+  paper          Paper             @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  relevanceScore Float
+  classification LitClassification
+  reasonForScore String            @db.Text
+  notes          String?           @db.Text
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([projectId, paperId])
+  @@index([projectId])
+  @@index([paperId])
+}
+
+// ============================================================================
+// Newsletter & Workflow Domain Models
+// ============================================================================
+
+model Newsletter {
+  id          String         @id @default(cuid())
+  title       String
+  issueNumber Int?
+  contentType ContentType    @default(newsletter)
+  status      ReviewStatus   @default(draft)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  target      DeliveryTarget @default(telegram_channel)
+  metadata    Json?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  sections     NewsletterSection[]
+  deliveryLogs DeliveryLog[]
+
+  @@index([status])
+}
+
+model NewsletterSection {
+  id              String     @id @default(cuid())
+  newsletterId    String
+  newsletter      Newsletter @relation(fields: [newsletterId], references: [id], onDelete: Cascade)
+  title           String
+  content         String     @db.Text
+  order           Int
+  paperReferences String[]   @default([])
+  sectionType     String     @default("custom")
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([newsletterId, order])
+}
+
+// ============================================================================
+// Subscribers & Telegram Delivery Domain Models
+// ============================================================================
+
+model Subscriber {
+  id             String   @id @default(cuid())
+  telegramChatId String   @unique
+  username       String?
+  firstName      String?
+  isActive       Boolean  @default(true)
+  topics         String[] @default([])
+  joinedAt       DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  deliveryLogs DeliveryLog[]
+}
+
+model DeliveryLog {
+  id             String      @id @default(cuid())
+  newsletterId   String
+  newsletter     Newsletter  @relation(fields: [newsletterId], references: [id], onDelete: Cascade)
+  subscriberId   String?
+  subscriber     Subscriber? @relation(fields: [subscriberId], references: [id], onDelete: SetNull)
+  telegramChatId String
+  status         String // "pending" | "sent" | "failed"
+  errorMessage   String?     @db.Text
+  sentAt         DateTime?
+  createdAt      DateTime    @default(now())
+
+  @@index([newsletterId])
+  @@index([subscriberId])
+  @@index([status])
+}
