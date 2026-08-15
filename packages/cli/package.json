@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@scholarkit/core": "workspace:*",
+    "@scholarkit/db": "workspace:*",
     "commander": "^15.0.0"
   },
   "devDependencies": {
