@@ -32,7 +32,7 @@ export class StructuredOutputValidationError extends Error {
 export interface StructuredPromptOptions<T> {
   systemPrompt?: string;
   userPrompt: string;
-  schema: z.ZodType<T>;
+  schema: z.ZodType<T, any, any>;
   schemaName: string;
   temperature?: number;
   maxRetries?: number; // Defaults to 1 retry on parse/validation failure
@@ -78,7 +78,7 @@ export function extractJsonFromText(rawText: string): unknown {
  */
 export function validateStructuredOutput<T>(
   data: unknown,
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, any, any>,
   rawText?: string
 ): T {
   const result = schema.safeParse(data);
