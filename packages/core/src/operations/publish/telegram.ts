@@ -86,3 +86,56 @@ export function formatNewsletterForTelegramHtml(newsletter: Newsletter): string 
 
   return parts.join("\n").trim();
 }
+
+/**
+ * Sends a single TelegramMessageChunk via Telegram Bot API sendMessage.
+ */
+export async function sendTelegramChunk(
+  botToken: string,
+  chunk: TelegramMessageChunk
+): Promise<{ ok: boolean; messageId?: number }> {
+  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chunk.chatId,
+      text: chunk.text,
+      parse_mode: chunk.parseMode || "HTML",
+    }),
+  });
+
+  const data = (await response.json()) as {
+    ok: boolean;
+    result?: { message_id: number };
+    description?: string;
+  };
+
+  if (!data.ok) {
+    throw new Error(`Telegram API Error: ${data.description || "Failed to dispatch message"}`);
+  }
+
+  return { ok: true, messageId: data.result?.message_id };
+}
+
+/**
+ * Dispatches all chunks with rate-limit pacing (defaults to 1000ms delay between consecutive chunks).
+ */
+export async function sendTelegramChunks(
+  botToken: string,
+  chunks: TelegramMessageChunk[],
+  delayMs = 1000
+): Promise<{ successfulChunks: number; totalChunks: number }> {
+  let successCount = 0;
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    if (!chunk) continue;
+    await sendTelegramChunk(botToken, chunk);
+    successCount++;
+    if (i < chunks.length - 1 && delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  return { successfulChunks: successCount, totalChunks: chunks.length };
+}
+
