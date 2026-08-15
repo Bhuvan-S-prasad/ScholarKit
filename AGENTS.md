@@ -174,7 +174,7 @@ If a task seems to call for a database inside Docker for anything other than tes
 
 Work through in this order — each step is meant to prove the previous one before adding complexity:
 
-1. [ ] `core` + `db` scaffolding — schemas, ingestion/extraction Zod schemas, stub extraction with fixed test data (no LLM call yet). Stand up the Neon project, write `schema.prisma`, run first `prisma migrate dev`. Add `docker-compose.yml` with the local Postgres container and wire `shadowDatabaseUrl` to it.
+1. [x] `core` + `db` scaffolding — schemas, ingestion/extraction Zod schemas, stub extraction with fixed test data (no LLM call yet). Stand up the Neon project, write `schema.prisma`, run first `prisma migrate dev`. Add `docker-compose.yml` with the local Postgres container and wire `shadowDatabaseUrl` to it.
 2. [ ] arXiv ingestion (`ingestPaperFromArxiv`) — no auth, proves ingest → store end to end.
 3. [ ] LLM-backed extraction — wire the injectable model client, validate against `PaperExtractionSchema`. Highest-risk piece; get it solid before building on top.
 4. [ ] `cli` — enough commands to ingest/extract papers locally.

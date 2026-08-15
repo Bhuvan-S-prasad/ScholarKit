@@ -1,0 +1,26 @@
+{
+  "name": "@scholarkit/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "generate": "bun --env-file=../../.env prisma generate --schema=./src/schema.prisma",
+    "migrate:dev": "bun --env-file=../../.env prisma migrate dev --schema=./src/schema.prisma",
+    "migrate:deploy": "bun --env-file=../../.env prisma migrate deploy --schema=./src/schema.prisma",
+    "db:push": "bun --env-file=../../.env prisma db push --schema=./src/schema.prisma",
+    "studio": "bun --env-file=../../.env prisma studio --schema=./src/schema.prisma",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "dotenv": "^16.4.7",
+    "prisma": "^6.4.1",
+    "typescript": "^5.7.3"
+  }
+}
