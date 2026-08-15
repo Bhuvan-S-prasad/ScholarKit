@@ -1,0 +1,24 @@
+{
+  "name": "@scholarkit/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "generate": "prisma generate --schema=./src/schema.prisma",
+    "migrate:dev": "prisma migrate dev --schema=./src/schema.prisma",
+    "migrate:deploy": "prisma migrate deploy --schema=./src/schema.prisma",
+    "studio": "prisma studio --schema=./src/schema.prisma",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "prisma": "^6.4.1",
+    "typescript": "^5.7.3"
+  }
+}
