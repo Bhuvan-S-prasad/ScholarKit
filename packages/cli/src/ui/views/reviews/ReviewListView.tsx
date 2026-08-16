@@ -21,7 +21,6 @@ export const ReviewListView: React.FC<ReviewListViewProps> = ({
 }) => {
   const { colors, isNoColor } = useTheme();
 
-  // Pagination
   const totalPages = Math.max(1, Math.ceil(projects.length / pageSize));
   const currentPage = Math.min(
     totalPages - 1,
@@ -61,16 +60,13 @@ export const ReviewListView: React.FC<ReviewListViewProps> = ({
           const isSelected = actualIndex === selectedIndex;
 
           return (
-            <Box key={project.id} justifyContent="space-between" paddingX={1}>
-              <Box gap={1} width="70%">
-                <Text
-                  bold={isSelected}
-                  color={!isNoColor && isSelected ? colors.primary : undefined}
-                >
-                  {isSelected ? "▶" : " "} {project.title.slice(0, 18)}
-                </Text>
-                <Text dimColor>({project.entries.length} ranked)</Text>
-              </Box>
+            <Box key={project.id} justifyContent="space-between">
+              <Text
+                bold={isSelected}
+                color={!isNoColor && isSelected ? colors.primary : undefined}
+              >
+                {isSelected ? "▶ " : "  "}{project.title.slice(0, 12)}
+              </Text>
               <TextStatusBadge status={project.status} />
             </Box>
           );
@@ -80,10 +76,10 @@ export const ReviewListView: React.FC<ReviewListViewProps> = ({
       {/* Pagination Footer */}
       <Box marginTop={1} justifyContent="space-between">
         <Text dimColor>
-          Showing {startIndex + 1}–{Math.min(startIndex + pageSize, projects.length)} of {projects.length}
+          {startIndex + 1}–{Math.min(startIndex + pageSize, projects.length)} of {projects.length}
         </Text>
         <Text dimColor>
-          Page {currentPage + 1}/{totalPages}
+          P.{currentPage + 1}/{totalPages}
         </Text>
       </Box>
     </Box>

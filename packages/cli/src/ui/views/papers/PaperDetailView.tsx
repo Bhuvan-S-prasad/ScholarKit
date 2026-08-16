@@ -11,6 +11,7 @@ export interface PaperDetailViewProps {
   extracting: boolean;
   extractionProgressText?: string;
   error?: string | null;
+  isDevMode?: boolean;
 }
 
 export const PaperDetailView: React.FC<PaperDetailViewProps> = ({
@@ -18,6 +19,7 @@ export const PaperDetailView: React.FC<PaperDetailViewProps> = ({
   extracting,
   extractionProgressText = "Extracting methodology via OpenRouter...",
   error,
+  isDevMode = false,
 }) => {
   const { colors, isNoColor } = useTheme();
 
@@ -44,23 +46,27 @@ export const PaperDetailView: React.FC<PaperDetailViewProps> = ({
     | undefined;
 
   return (
-    <Box flexDirection="column" gap={1}>
+    <Box flexDirection="column" gap={0}>
       {error && (
-        <Box borderStyle="single" borderColor="red" paddingX={1}>
+        <Box borderStyle="single" borderColor="red" paddingX={1} marginBottom={1}>
           <Text color="red">Error: {error}</Text>
         </Box>
       )}
 
-      {/* Title & Status */}
-      <Box justifyContent="space-between">
-        <Text bold color={isNoColor ? undefined : colors.primary}>
-          {paper.title}
-        </Text>
-        <TextStatusBadge status={paper.status} />
+      {/* 1. Header: Title and Status Badge */}
+      <Box justifyContent="space-between" alignItems="flex-start" marginBottom={1}>
+        <Box flexGrow={1} marginRight={2}>
+          <Text bold color={isNoColor ? undefined : colors.primary}>
+            {paper.title}
+          </Text>
+        </Box>
+        <Box flexShrink={0}>
+          <TextStatusBadge status={paper.status} />
+        </Box>
       </Box>
 
-      {/* Metadata Bar */}
-      <Box gap={1} flexWrap="wrap">
+      {/* 2. Metadata Bar */}
+      <Box gap={1} marginBottom={1}>
         <Text dimColor>Authors: {paper.authors.slice(0, 3).join(", ")}{paper.authors.length > 3 ? " et al." : ""}</Text>
         <Text dimColor>│</Text>
         <Text dimColor>Published: {paper.publishedDate}</Text>
@@ -68,7 +74,7 @@ export const PaperDetailView: React.FC<PaperDetailViewProps> = ({
         <Text dimColor>arXiv: {paper.sourceId}</Text>
       </Box>
 
-      {/* Structured Extraction Section or Abstract */}
+      {/* 3. Structured Extraction Section or Abstract */}
       {extraction ? (
         <Box flexDirection="column" gap={1}>
           {/* Confidence Meter */}
@@ -116,7 +122,7 @@ export const PaperDetailView: React.FC<PaperDetailViewProps> = ({
         <Box flexDirection="column" gap={1}>
           <Box flexDirection="column">
             <Text bold>Abstract:</Text>
-            <Text>{paper.abstract.slice(0, 280)}...</Text>
+            <Text>{paper.abstract.slice(0, 260)}...</Text>
           </Box>
 
           <Box marginTop={1} borderStyle="single" borderColor={isNoColor ? undefined : colors.primary} paddingX={1}>
@@ -125,9 +131,14 @@ export const PaperDetailView: React.FC<PaperDetailViewProps> = ({
             </Text>
             <Text dimColor>Press </Text>
             <Text bold>[e]</Text>
-            <Text dimColor> to Extract with OpenRouter, or </Text>
-            <Text bold>[s]</Text>
-            <Text dimColor> for Offline Stub</Text>
+            <Text dimColor> to Extract with OpenRouter</Text>
+            {isDevMode && (
+              <>
+                <Text dimColor>, or </Text>
+                <Text bold>[s]</Text>
+                <Text dimColor> for Offline Stub</Text>
+              </>
+            )}
           </Box>
         </Box>
       )}

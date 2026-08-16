@@ -9,27 +9,32 @@ export interface FooterProps {
 export const Footer: React.FC<FooterProps> = ({ customHotkeys = [] }) => {
   const { colors, isNoColor } = useTheme();
 
+  const allItems = [
+    { key: "1/2/3", label: "Tabs" },
+    { key: "Tab", label: "Focus" },
+    { key: "↑/↓", label: "Nav" },
+    ...customHotkeys,
+    { key: "q", label: "Quit" },
+  ];
+
   return (
     <Box
       marginTop={1}
       borderStyle="single"
       borderColor={isNoColor ? undefined : colors.borderUnfocused}
       paddingX={1}
-      justifyContent="space-between"
+      flexWrap="wrap"
+      gap={1}
     >
-      <Box gap={2}>
-        <Text dimColor>[1/2/3] Tabs</Text>
-        <Text dimColor>[Tab] Focus</Text>
-        <Text dimColor>[↑/↓] Navigate</Text>
-        {customHotkeys.map((hk) => (
-          <Text key={hk.key} dimColor>
-            [{hk.key}] {hk.label}
+      {allItems.map((item, idx) => (
+        <Box key={item.key}>
+          <Text color={isNoColor ? undefined : colors.primary} bold>
+            [{item.key}]
           </Text>
-        ))}
-      </Box>
-      <Box gap={1}>
-        <Text dimColor>[q] Quit</Text>
-      </Box>
+          <Text dimColor> {item.label}</Text>
+          {idx < allItems.length - 1 && <Text dimColor> │ </Text>}
+        </Box>
+      ))}
     </Box>
   );
 };

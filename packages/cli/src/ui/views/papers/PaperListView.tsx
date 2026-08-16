@@ -25,7 +25,6 @@ export const PaperListView: React.FC<PaperListViewProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [debouncedQuery, setDebouncedQuery] = useState<string>("");
 
-  // Debounce search input (150ms) to avoid re-rendering on every keystroke
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(searchQuery);
@@ -33,7 +32,6 @@ export const PaperListView: React.FC<PaperListViewProps> = ({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Filter papers
   const filteredPapers = useMemo(() => {
     if (!debouncedQuery.trim()) return papers;
     const lower = debouncedQuery.toLowerCase();
@@ -45,7 +43,6 @@ export const PaperListView: React.FC<PaperListViewProps> = ({
     );
   }, [papers, debouncedQuery]);
 
-  // Pagination calculation
   const totalPages = Math.max(1, Math.ceil(filteredPapers.length / pageSize));
   const currentPage = Math.min(
     totalPages - 1,
@@ -54,7 +51,6 @@ export const PaperListView: React.FC<PaperListViewProps> = ({
   const startIndex = currentPage * pageSize;
   const visiblePapers = filteredPapers.slice(startIndex, startIndex + pageSize);
 
-  // Keyboard navigation when focused
   useInput(
     (input, key) => {
       if (filterMode) {
@@ -88,19 +84,19 @@ export const PaperListView: React.FC<PaperListViewProps> = ({
       {filterMode ? (
         <Box marginBottom={1} borderStyle="single" borderColor={isNoColor ? undefined : colors.primary} paddingX={1}>
           <Text color={isNoColor ? undefined : colors.primary} bold>
-            Filter:{" "}
+            /:{" "}
           </Text>
           <TextInput
             value={searchQuery}
             onChange={setSearchQuery}
             onSubmit={() => setFilterMode(false)}
-            placeholder="Type arXiv ID or keyword..."
+            placeholder="Search arXiv ID or title..."
           />
         </Box>
       ) : searchQuery ? (
         <Box marginBottom={1} justifyContent="space-between">
-          <Text dimColor>Filter: "{searchQuery}"</Text>
-          <Text dimColor>[Press / to edit, Esc to clear]</Text>
+          <Text dimColor>Filter: "{searchQuery.slice(0, 10)}"</Text>
+          <Text dimColor>[Esc to clear]</Text>
         </Box>
       ) : null}
 
@@ -108,7 +104,7 @@ export const PaperListView: React.FC<PaperListViewProps> = ({
       {filteredPapers.length === 0 ? (
         <Box paddingY={1}>
           <Text dimColor>
-            {searchQuery ? "No matching papers found." : "No papers in database. Press 'i' to ingest."}
+            {searchQuery ? "No matching papers." : "No papers in DB. Press 'i' to ingest."}
           </Text>
         </Box>
       ) : (
@@ -118,20 +114,13 @@ export const PaperListView: React.FC<PaperListViewProps> = ({
             const isSelected = actualIndex === selectedIndex;
 
             return (
-              <Box
-                key={paper.id}
-                justifyContent="space-between"
-                paddingX={0}
-              >
-                <Box gap={1}>
-                  <Text
-                    bold={isSelected}
-                    color={!isNoColor && isSelected ? colors.primary : undefined}
-                  >
-                    {isSelected ? "▶" : " "} {paper.sourceId.slice(0, 13)}
-                  </Text>
-                  <Text dimColor>{paper.title.slice(0, 10)}..</Text>
-                </Box>
+              <Box key={paper.id} justifyContent="space-between">
+                <Text
+                  bold={isSelected}
+                  color={!isNoColor && isSelected ? colors.primary : undefined}
+                >
+                  {isSelected ? "▶ " : "  "}{paper.sourceId.slice(0, 14)}
+                </Text>
                 <TextStatusBadge status={paper.status} />
               </Box>
             );
@@ -143,10 +132,10 @@ export const PaperListView: React.FC<PaperListViewProps> = ({
       {filteredPapers.length > 0 && (
         <Box marginTop={1} justifyContent="space-between">
           <Text dimColor>
-            Showing {startIndex + 1}–{Math.min(startIndex + pageSize, filteredPapers.length)} of {filteredPapers.length}
+            {startIndex + 1}–{Math.min(startIndex + pageSize, filteredPapers.length)} of {filteredPapers.length}
           </Text>
           <Text dimColor>
-            Page {currentPage + 1}/{totalPages} [/ Filter]
+            P.{currentPage + 1}/{totalPages} [/ Filter]
           </Text>
         </Box>
       )}

@@ -178,20 +178,22 @@ Work through each phase sequentially — each phase completes an entire adapter 
 ### Phase 0: Foundation (Completed)
 - [x] `core` + `db` scaffolding — schemas, Zod validation contracts, stub extraction, Neon Postgres schema setup, and Prisma migrations.
 
-### Phase 1: CLI (`packages/cli`)
-Complete the core pipeline and expose all operations through local CLI commands:
-- [ ] **Paper Ingestion & Extraction**:
+### Phase 1: CLI & Interactive TUI (`packages/cli`) (Completed)
+- [x] **Paper Ingestion & Extraction**:
   - `scholarkit paper ingest <arxiv-id | url>` — fetch arXiv Atom feed, validate, and persist in Neon DB.
   - `scholarkit paper extract <paper-id>` — run LLM-backed structured extraction, score confidence, and store in DB.
   - `scholarkit paper analyze <paper-ids...>` — compare methodology, findings, and identify research gaps across papers.
-- [ ] **Literature Review**:
+- [x] **Literature Review**:
   - `scholarkit review init <title>` — create new literature review project.
   - `scholarkit review rank <project-id>` — classify and rank ingested papers against project criteria with LLM.
   - `scholarkit review draft <project-id>` — generate structured literature review draft.
-- [ ] **Newsletter & Telegram Publishing**:
+- [x] **Newsletter & Telegram Publishing**:
   - `scholarkit newsletter draft <title>` — create newsletter draft from recent papers or reviews.
   - `scholarkit newsletter transition <id> <action>` — advance review state machine (`submit`, `approve`, `schedule`).
+  - `scholarkit newsletter preview <id>` — chunk analysis and formatting.
   - `scholarkit newsletter send <id>` — send digest to Telegram with rate pacing and 4096-char chunking.
+- [x] **Interactive Dashboard (TUI)**:
+  - `scholarkit tui [--dev]` — dual-pane master-detail dashboard with debounced filtering (`/`), full keyboard navigation, arXiv ingestion modal (`[i]`), live extraction (`[e]`), review ranking (`[r]`), draft synthesis (`[d]`), newsletter state machine (`[t]`), and Telegram preview (`[p]`).
 
 ### Phase 2: Local MCP Server (`packages/local-mcp`)
 Expose all validated core domain operations as agent tools over stdio:
@@ -214,8 +216,9 @@ Build multi-client remote MCP deployment:
 
 ---
 
-## 8. Open decisions (resolve before the relevant build step, not before)
+## 8. Open decisions (resolved & documented)
 
+- **Literature Review Scope (v1 vs Roadmap)**: **RESOLVED (v1 = Ingested Repository Classification & Synthesis)**. In v1, the Literature Review manager classifies and ranks the repository of ingested papers (`classifyAndRankPapers`), runs in-memory deduplication (`deduplicatePapers`), and generates synthesized drafts (`buildLiteratureReviewDraft`). Multi-provider live web scraping/crawling (Semantic Scholar / PubMed external search) is deferred to future roadmap.
 - **Single-user tool vs. multi-subscriber newsletter?** Determines whether `Subscriber`/`DeliveryLog`/webhook/`remote-mcp`+Clerk are needed at all in v1. Default assumption until told otherwise: **build solo-mode first** (CLI and Local MCP), defer the subscriber/delivery machinery.
 - **Channel broadcast vs. per-subscriber DM** for Telegram — DM is implied by "personalize" being in the newsletter spec, but channel is the faster MVP if personalization can wait.
 - Paper sources beyond arXiv (Semantic Scholar, PubMed) — not needed for v1.

@@ -5,6 +5,8 @@ import { useTheme } from "../../contexts/ThemeContext.js";
 export interface FocusedPanelProps {
   title: string;
   width?: string | number;
+  flexGrow?: number;
+  flexShrink?: number;
   isFocused?: boolean;
   rightHeader?: string;
   children: React.ReactNode;
@@ -13,6 +15,8 @@ export interface FocusedPanelProps {
 export const FocusedPanel: React.FC<FocusedPanelProps> = ({
   title,
   width,
+  flexGrow,
+  flexShrink,
   isFocused = false,
   rightHeader,
   children,
@@ -22,6 +26,8 @@ export const FocusedPanel: React.FC<FocusedPanelProps> = ({
   return (
     <Box
       width={width}
+      flexGrow={flexGrow}
+      flexShrink={flexShrink}
       flexDirection="column"
       borderStyle="single"
       borderColor={

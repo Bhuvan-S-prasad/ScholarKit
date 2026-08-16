@@ -22,7 +22,8 @@ program
   .command("tui")
   .description("Launch the interactive terminal dashboard (lazygit / k9s style)")
   .option("-t, --tab <tab>", "Initial tab to open: papers | reviews | newsletters", "papers")
-  .action(async (options: { tab?: "papers" | "reviews" | "newsletters" }) => {
+  .option("--dev", "Enable developer testing hotkeys (such as offline stub extraction)")
+  .action(async (options: { tab?: "papers" | "reviews" | "newsletters"; dev?: boolean }) => {
     const { launchTui } = await import("./ui/index.js");
     await launchTui({ initialTab: options.tab });
   });

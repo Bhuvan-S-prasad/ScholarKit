@@ -247,6 +247,10 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
     }
   };
 
+  const isDevMode = Boolean(
+    process.argv.includes("--dev") || process.env.SCHOLARKIT_DEV === "1"
+  );
+
   const isAnyModalOpen =
     isIngestModalOpen ||
     isCreateReviewOpen ||
@@ -284,7 +288,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
           setIsIngestModalOpen(true);
         } else if (input === "e" || input === "E") {
           handleExtractPaper(false);
-        } else if (input === "s" || input === "S") {
+        } else if ((input === "s" || input === "S") && isDevMode) {
           handleExtractPaper(true);
         }
       } else if (activeTab === "reviews") {
@@ -321,14 +325,16 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
         ? "Literature Reviews"
         : "Newsletters & Publishing";
 
+  const paperHotkeys = [
+    { key: "i", label: "Ingest arXiv" },
+    { key: "e", label: "Extract (LLM)" },
+    ...(isDevMode ? [{ key: "s", label: "Stub Extract" }] : []),
+    { key: "R", label: "Refresh" },
+  ];
+
   const customHotkeys =
     activeTab === "papers"
-      ? [
-          { key: "i", label: "Ingest arXiv" },
-          { key: "e", label: "Extract (LLM)" },
-          { key: "s", label: "Stub Extract" },
-          { key: "R", label: "Refresh" },
-        ]
+      ? paperHotkeys
       : activeTab === "reviews"
         ? [
             { key: "c", label: "New Project" },
@@ -391,7 +397,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
 
       {/* 3. Main Dual-Pane Master-Detail Area */}
       {!isAnyModalOpen && (
-        <Box height={16} gap={1}>
+        <Box gap={1}>
           {/* Left Master List Pane */}
           <FocusedPanel
             title={
@@ -401,11 +407,11 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
                   ? `Projects (${projects.length})`
                   : `Issues (${newsletters.length})`
             }
-            width="35%"
+            width={28}
             isFocused={activePane === "left"}
           >
             {loading ? (
-              <StatusSpinner label="Syncing with Neon DB..." />
+              <StatusSpinner label="Syncing..." />
             ) : error ? (
               <Text color="red">{error}</Text>
             ) : activeTab === "papers" ? (
@@ -441,7 +447,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
                   ? "Project & Ranked Matrix"
                   : "Issue Details & Workflow"
             }
-            width="65%"
+            flexGrow={1}
             isFocused={activePane === "right"}
           >
             {activeTab === "papers" ? (
@@ -450,6 +456,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
                 extracting={isExtracting}
                 extractionProgressText={extractionProgress}
                 error={actionError}
+                isDevMode={isDevMode}
               />
             ) : activeTab === "reviews" ? (
               <ReviewDetailView

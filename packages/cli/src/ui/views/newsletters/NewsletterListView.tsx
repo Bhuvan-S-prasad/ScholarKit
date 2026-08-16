@@ -60,16 +60,13 @@ export const NewsletterListView: React.FC<NewsletterListViewProps> = ({
           const isSelected = actualIndex === selectedIndex;
 
           return (
-            <Box key={nl.id} justifyContent="space-between" paddingX={1}>
-              <Box gap={1} width="65%">
-                <Text
-                  bold={isSelected}
-                  color={!isNoColor && isSelected ? colors.primary : undefined}
-                >
-                  {isSelected ? "▶" : " "} #{nl.issueNumber || "—"} {nl.title.slice(0, 16)}
-                </Text>
-                <Text dimColor>({nl.sections.length} sections)</Text>
-              </Box>
+            <Box key={nl.id} justifyContent="space-between">
+              <Text
+                bold={isSelected}
+                color={!isNoColor && isSelected ? colors.primary : undefined}
+              >
+                {isSelected ? "▶ " : "  "}#{nl.issueNumber || "—"} {nl.title.slice(0, 10)}
+              </Text>
               <TextStatusBadge status={nl.status} />
             </Box>
           );
@@ -79,10 +76,10 @@ export const NewsletterListView: React.FC<NewsletterListViewProps> = ({
       {/* Pagination Footer */}
       <Box marginTop={1} justifyContent="space-between">
         <Text dimColor>
-          Showing {startIndex + 1}–{Math.min(startIndex + pageSize, newsletters.length)} of {newsletters.length}
+          {startIndex + 1}–{Math.min(startIndex + pageSize, newsletters.length)} of {newsletters.length}
         </Text>
         <Text dimColor>
-          Page {currentPage + 1}/{totalPages}
+          P.{currentPage + 1}/{totalPages}
         </Text>
       </Box>
     </Box>
