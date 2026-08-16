@@ -9,6 +9,7 @@ import {
   createMockLLMClient,
   PaperMetadata,
   LitReviewProject,
+  WorkflowAction,
   SCHOLARKIT_CONFIG,
 } from "@scholarkit/core";
 import { prisma } from "@scholarkit/db";
@@ -247,6 +248,252 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
     }
   };
 
+  const handleSearchArxivForReview = async () => {
+    if (!selectedProject) return;
+
+    try {
+      setIsRanking(true);
+      setActionError(null);
+      setRankingProgress(`[1/3] Searching arXiv for "${selectedProject.query}"...`);
+
+      const { searchArxivPapers } = await import("@scholarkit/core");
+      const searchResults = await searchArxivPapers(selectedProject.query, { maxResults: 6 });
+
+      if (searchResults.length === 0) {
+        setActionError("No papers found on arXiv for this query.");
+        return;
+      }
+
+      setRankingProgress(`[2/3] Found ${searchResults.length} papers. Deduplicating...`);
+      const existing = await prisma.paper.findMany({
+        where: { sourceId: { in: searchResults.map((p) => p.sourceId) } },
+      });
+      const existingIds = new Set(existing.map((p) => p.sourceId));
+      const newPapers = searchResults.filter((p) => !existingIds.has(p.sourceId));
+
+      for (const p of newPapers) {
+        await prisma.paper.create({
+          data: {
+            title: p.title,
+            authors: p.authors,
+            abstract: p.abstract,
+            publishedDate: p.publishedDate,
+            source: p.source,
+            sourceId: p.sourceId,
+            url: p.url,
+            pdfUrl: p.pdfUrl,
+            categories: p.categories,
+            status: p.status,
+          },
+        });
+      }
+
+      await refreshPapers();
+      setRankingProgress(`[3/3] Ranking papers against project criteria...`);
+      await handleRankPapers();
+    } catch (err) {
+      setActionError(`arXiv search failed: ${(err as Error).message}`);
+    } finally {
+      setIsRanking(false);
+      setRankingProgress("");
+    }
+  };
+
+  const handleBridgeReviewToNewsletter = async () => {
+    if (!selectedProject) return;
+
+    try {
+      setActionError(null);
+      const { createNewsletterFromLiteratureReview, buildLiteratureReviewDraft } = await import("@scholarkit/core");
+
+      const projectDomain: LitReviewProject = {
+        id: selectedProject.id,
+        title: selectedProject.title,
+        description: selectedProject.description || undefined,
+        query: selectedProject.query,
+        inclusionCriteria: selectedProject.inclusionCriteria,
+        exclusionCriteria: selectedProject.exclusionCriteria,
+        status: selectedProject.status as any,
+      };
+
+      const entriesWithPapers = selectedProject.entries.map((e) => ({
+        entry: {
+          id: e.id,
+          projectId: e.projectId,
+          paperId: e.paperId,
+          relevanceScore: e.relevanceScore,
+          classification: e.classification as any,
+          reasonForScore: e.reasonForScore,
+          notes: e.notes || undefined,
+          createdAt: e.createdAt.toISOString(),
+        },
+        paper: {
+          id: e.paper.id,
+          title: e.paper.title,
+          authors: e.paper.authors,
+          abstract: e.paper.abstract,
+          publishedDate: e.paper.publishedDate,
+          source: e.paper.source as any,
+          sourceId: e.paper.sourceId,
+          url: e.paper.url,
+          pdfUrl: e.paper.pdfUrl || undefined,
+          categories: e.paper.categories,
+          status: e.paper.status as any,
+          rawContent: e.paper.rawContent || undefined,
+          createdAt: e.paper.createdAt.toISOString(),
+          updatedAt: e.paper.updatedAt.toISOString(),
+        },
+      }));
+
+      const apiKey = process.env.OPENROUTER_API_KEY;
+      const defaultModel = process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
+
+      let draftResult;
+      if (apiKey) {
+        const llm = createOpenRouterClient({ apiKey, defaultModel });
+        draftResult = await buildLiteratureReviewDraft(projectDomain, entriesWithPapers, llm);
+      } else {
+        draftResult = {
+          title: `Literature Review: ${selectedProject.title}`,
+          abstractOrExecutiveSummary: `Synthesis of key contributions across ${entriesWithPapers.length} analyzed works on ${selectedProject.query}.`,
+          sections: [
+            {
+              title: "Architectural & Methodological Highlights",
+              content: "Recent research emphasizes compute optimization and sparse execution to maximize throughput.",
+              citedPaperIds: entriesWithPapers.map((e) => e.paper.sourceId),
+            },
+          ],
+          researchGapsIdentified: ["Standardized benchmark evaluations across heterogeneous infrastructure"],
+          conclusion: "The literature demonstrates a clear trend toward hardware-aware serving systems.",
+          generatedAt: new Date().toISOString(),
+        };
+      }
+
+      const topPapers = entriesWithPapers.map((e) => e.paper as PaperMetadata);
+      const nextIssue = newsletters.length + 1;
+      const newsletterDraft = createNewsletterFromLiteratureReview(projectDomain, draftResult, topPapers, {
+        issueNumber: nextIssue,
+      });
+
+      await prisma.newsletter.create({
+        data: {
+          title: newsletterDraft.title,
+          issueNumber: newsletterDraft.issueNumber,
+          contentType: newsletterDraft.contentType,
+          status: newsletterDraft.status,
+          target: newsletterDraft.target,
+          sections: {
+            create: newsletterDraft.sections.map((s) => ({
+              title: s.title,
+              content: s.content,
+              order: s.order,
+              sectionType: s.sectionType,
+              paperReferences: s.paperReferences,
+            })),
+          },
+        },
+      });
+
+      await refreshNewsletters();
+      setActiveTab("newsletters");
+      setSelectedIndex(0);
+    } catch (err) {
+      setActionError(`Bridge to newsletter failed: ${(err as Error).message}`);
+    }
+  };
+
+  const handleDirectTransition = async (action: WorkflowAction) => {
+    if (!selectedNewsletter) return;
+
+    try {
+      setActionError(null);
+      const { transitionReviewStatus } = await import("@scholarkit/core");
+      const nextStatus = transitionReviewStatus(selectedNewsletter.status as any, action);
+
+      await prisma.newsletter.update({
+        where: { id: selectedNewsletter.id },
+        data: {
+          status: nextStatus,
+          scheduledAt: nextStatus === "scheduled" ? new Date(Date.now() + 3600000) : selectedNewsletter.scheduledAt,
+          sentAt: nextStatus === "sent" ? new Date() : selectedNewsletter.sentAt,
+        },
+      });
+
+      await refreshNewsletters();
+    } catch (err) {
+      setActionError(`Transition failed: ${(err as Error).message}`);
+    }
+  };
+
+  const handleRunSchedulerWorker = async () => {
+    try {
+      setActionError(null);
+      const { evaluateScheduledQueue, formatNewsletterForTelegramHtml, chunkTelegramMessage, sendTelegramChunks } = await import("@scholarkit/core");
+
+      const scheduledNewsletters = await prisma.newsletter.findMany({
+        where: { status: "scheduled" },
+        include: { sections: { orderBy: { order: "asc" } } },
+      });
+
+      const { due } = evaluateScheduledQueue(scheduledNewsletters, new Date());
+      if (due.length === 0) {
+        setActionError("No due scheduled newsletters in queue.");
+        return;
+      }
+
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      const targetChatId = process.env.TELEGRAM_CHAT_ID;
+
+      if (!botToken || botToken.includes("123456789") || !targetChatId) {
+        setActionError("Valid TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID required in .env to dispatch.");
+        return;
+      }
+
+      for (const nl of due) {
+        await prisma.newsletter.update({
+          where: { id: nl.id },
+          data: { status: "sending" },
+        });
+
+        const html = formatNewsletterForTelegramHtml({
+          title: nl.title,
+          issueNumber: nl.issueNumber || undefined,
+          contentType: nl.contentType,
+          status: "sending",
+          target: nl.target,
+          sections: nl.sections.map((s) => ({
+            title: s.title,
+            content: s.content,
+            order: s.order,
+            sectionType: s.sectionType as any,
+            paperReferences: s.paperReferences,
+          })),
+        });
+
+        const chunks = chunkTelegramMessage(html, targetChatId, 4096);
+        await sendTelegramChunks(botToken, chunks, 1000);
+
+        await prisma.deliveryLog.create({
+          data: {
+            newsletterId: nl.id,
+            telegramChatId: targetChatId,
+            status: "sent",
+            sentAt: new Date(),
+          },
+        });
+
+        await prisma.newsletter.update({
+          where: { id: nl.id },
+          data: { status: "sent", sentAt: new Date() },
+        });
+      }
+
+      await refreshNewsletters();
+    } catch (err) {
+      setActionError(`Scheduler worker error: ${(err as Error).message}`);
+    }
+  };
+
   const isDevMode = Boolean(
     process.argv.includes("--dev") || process.env.SCHOLARKIT_DEV === "1"
   );
@@ -294,12 +541,16 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
       } else if (activeTab === "reviews") {
         if (input === "c" || input === "C") {
           setIsCreateReviewOpen(true);
+        } else if (input === "s" || input === "S") {
+          handleSearchArxivForReview();
         } else if (input === "r" || input === "R") {
           handleRankPapers();
         } else if (input === "d" || input === "D") {
           if (selectedProject && selectedProject.entries.length > 0) {
             setIsDraftModalOpen(true);
           }
+        } else if (input === "N") {
+          handleBridgeReviewToNewsletter();
         }
       } else if (activeTab === "newsletters") {
         if (input === "n" || input === "N") {
@@ -312,6 +563,20 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
           if (selectedNewsletter) {
             setIsTelegramPreviewOpen(true);
           }
+        } else if (input === "a" || input === "A") {
+          if (selectedNewsletter?.status === "in_review") {
+            handleDirectTransition("approve");
+          }
+        } else if (input === "c" || input === "C") {
+          if (selectedNewsletter?.status === "in_review") {
+            handleDirectTransition("request_changes");
+          }
+        } else if (input === "S") {
+          if (selectedNewsletter?.status === "approved") {
+            handleDirectTransition("schedule");
+          }
+        } else if (input === "w" || input === "W") {
+          handleRunSchedulerWorker();
         }
       }
     },
@@ -332,22 +597,36 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
     { key: "R", label: "Refresh" },
   ];
 
+  const reviewHotkeys = [
+    { key: "c", label: "New Project" },
+    { key: "s", label: "Search arXiv" },
+    { key: "r", label: "Rank Papers" },
+    { key: "d", label: "Draft Review" },
+    { key: "N", label: "To Newsletter" },
+    { key: "R", label: "Refresh" },
+  ];
+
+  const newsletterHotkeys = [
+    { key: "n", label: "New Issue" },
+    { key: "t", label: "Transition" },
+    ...(selectedNewsletter?.status === "in_review"
+      ? [
+          { key: "a", label: "Approve" },
+          { key: "c", label: "Request Changes" },
+        ]
+      : []),
+    ...(selectedNewsletter?.status === "approved" ? [{ key: "S", label: "Schedule" }] : []),
+    ...(selectedNewsletter?.status === "scheduled" ? [{ key: "w", label: "Dispatch" }] : []),
+    { key: "p", label: "Telegram Preview" },
+    { key: "R", label: "Refresh" },
+  ];
+
   const customHotkeys =
     activeTab === "papers"
       ? paperHotkeys
       : activeTab === "reviews"
-        ? [
-            { key: "c", label: "New Project" },
-            { key: "r", label: "Rank Papers" },
-            { key: "d", label: "Draft Review" },
-            { key: "R", label: "Refresh" },
-          ]
-        : [
-            { key: "n", label: "New Issue" },
-            { key: "t", label: "Transition" },
-            { key: "p", label: "Telegram Preview" },
-            { key: "R", label: "Refresh" },
-          ];
+        ? reviewHotkeys
+        : newsletterHotkeys;
 
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0}>

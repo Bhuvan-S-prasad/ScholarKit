@@ -17,11 +17,40 @@ export function normalizeArxivId(input: string): string {
 }
 
 /**
- * Pure helper to construct the arXiv API query URL for fetching metadata.
+ * Pure helper to construct the arXiv API query URL for fetching metadata by ID.
  */
 export function buildArxivApiUrl(arxivId: string): string {
   const cleanId = normalizeArxivId(arxivId);
   return `https://export.arxiv.org/api/query?id_list=${encodeURIComponent(cleanId)}`;
+}
+
+/**
+ * Pure helper to construct the arXiv API search query URL.
+ */
+export function buildArxivSearchUrl(
+  query: string,
+  maxResults: number = 8,
+  sortBy: "relevance" | "lastUpdatedDate" | "submittedDate" = "relevance"
+): string {
+  const cleanQuery = query.trim();
+  return `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(cleanQuery)}&start=0&max_results=${maxResults}&sortBy=${sortBy}&sortOrder=descending`;
+}
+
+/**
+ * Fetches and parses arXiv papers matching a free-text search query.
+ */
+export async function searchArxivPapers(
+  query: string,
+  options?: { maxResults?: number; fetchFn?: typeof fetch }
+): Promise<PaperMetadata[]> {
+  const fetchImpl = options?.fetchFn || fetch;
+  const url = buildArxivSearchUrl(query, options?.maxResults || 8);
+  const res = await fetchImpl(url);
+  if (!res.ok) {
+    throw new Error(`arXiv search API returned HTTP ${res.status}: ${res.statusText}`);
+  }
+  const xml = await res.text();
+  return parseArxivAtomFeed(xml);
 }
 
 /**

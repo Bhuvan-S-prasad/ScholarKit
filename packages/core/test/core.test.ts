@@ -6,6 +6,8 @@ import {
   // Operations
   parseArxivAtomFeed,
   normalizeArxivId,
+  buildArxivSearchUrl,
+  searchArxivPapers,
   createStubExtraction,
   evaluateExtractionConfidence,
   extractPaperData,
@@ -15,7 +17,11 @@ import {
   InvalidWorkflowTransitionError,
   chunkTelegramMessage,
   createNewsletterDraft,
+  createNewsletterFromLiteratureReview,
+  createNewsletterFromRecentPapers,
   formatNewsletterForTelegramHtml,
+  isDueForDelivery,
+  evaluateScheduledQueue,
 } from "../src/index.js";
 
 describe("ScholarKit Core", () => {
@@ -78,6 +84,48 @@ describe("ScholarKit Core", () => {
       expect(papers[0]?.authors).toEqual(["Alice Researcher", "Bob Scientist"]);
       expect(papers[0]?.sourceId).toBe("2312.12456v1");
       expect(papers[0]?.source).toBe("arxiv");
+    });
+
+    it("constructs valid arXiv search query URLs", () => {
+      const url = buildArxivSearchUrl("quantum computing error mitigation", 5);
+      expect(url).toContain("search_query=all:quantum%20computing%20error%20mitigation");
+      expect(url).toContain("max_results=5");
+      expect(url).toContain("sortBy=relevance");
+    });
+
+    it("fetches and parses multi-paper search results with injected fetch mock", async () => {
+      const mockMultiXml = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/2401.00001</id>
+    <title>Sparse Neural Networks</title>
+    <summary>First paper on sparsity.</summary>
+    <published>2024-01-01T00:00:00Z</published>
+    <author><name>Author A</name></author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2401.00002</id>
+    <title>Mixture of Experts Serving</title>
+    <summary>Second paper on MoE serving.</summary>
+    <published>2024-01-02T00:00:00Z</published>
+    <author><name>Author B</name></author>
+  </entry>
+</feed>`;
+
+      const mockFetch: typeof fetch = async (input: RequestInfo | URL) => {
+        return new Response(mockMultiXml, { status: 200, statusText: "OK" });
+      };
+
+      const results = await searchArxivPapers("sparse networks", {
+        maxResults: 2,
+        fetchFn: mockFetch,
+      });
+
+      expect(results.length).toBe(2);
+      expect(results[0]?.sourceId).toBe("2401.00001");
+      expect(results[0]?.title).toBe("Sparse Neural Networks");
+      expect(results[1]?.sourceId).toBe("2401.00002");
+      expect(results[1]?.title).toBe("Mixture of Experts Serving");
     });
   });
 
@@ -244,6 +292,103 @@ describe("ScholarKit Core", () => {
       const html = formatNewsletterForTelegramHtml(newsletter);
       expect(html).toContain("Weekly Research Digest");
       expect(html).toContain("Breakthroughs in Reasoning");
+    });
+  });
+
+  describe("Newsletter Synthesis Bridges & Scheduler Operations", () => {
+    const samplePaper = {
+      title: "Sparse Activation in Neural Networks",
+      authors: ["Alice Expert", "Bob Engineer"],
+      abstract: "Methods for sparse compute and execution...",
+      publishedDate: "2024-01-15",
+      source: "arxiv" as const,
+      sourceId: "2401.55555",
+      url: "https://arxiv.org/abs/2401.55555",
+      status: "ingested" as const,
+    };
+
+    it("synthesizes a structured Newsletter from a Literature Review Draft", () => {
+      const project = {
+        id: "proj-1",
+        title: "Sparse Activation Networks",
+        query: "sparse neural compute",
+        inclusionCriteria: ["sparsity >= 50%"],
+        exclusionCriteria: [],
+        status: "active" as const,
+      };
+
+      const draft = {
+        title: "Synthesis of Sparse Activation",
+        abstractOrExecutiveSummary: "Executive overview of sparse models.",
+        sections: [
+          {
+            title: "Kernel Acceleration",
+            content: "GPU kernel optimization for non-zero activations.",
+            citedPaperIds: ["2401.55555"],
+          },
+        ],
+        researchGapsIdentified: ["Memory bandwidth limits on embedded devices"],
+        conclusion: "Promising efficiency improvements observed.",
+      };
+
+      const newsletter = createNewsletterFromLiteratureReview(project, draft, [samplePaper], {
+        issueNumber: 1,
+      });
+
+      expect(newsletter.title).toContain("Sparse Activation Networks");
+      expect(newsletter.issueNumber).toBe(1);
+      expect(newsletter.status).toBe("draft");
+      expect(newsletter.sections.length).toBe(4); // intro + deep_dive + quick_takes + outro
+      expect(newsletter.sections[0]?.sectionType).toBe("intro");
+      expect(newsletter.sections[1]?.title).toBe("Kernel Acceleration");
+      expect(newsletter.sections[2]?.sectionType).toBe("quick_takes");
+      expect(newsletter.sections[3]?.sectionType).toBe("outro");
+    });
+
+    it("synthesizes a structured Newsletter digest from Recent Ingested Papers", () => {
+      const newsletter = createNewsletterFromRecentPapers([samplePaper], {
+        issueNumber: 2,
+        title: "Weekly AI Digest #2",
+      });
+
+      expect(newsletter.title).toBe("Weekly AI Digest #2");
+      expect(newsletter.issueNumber).toBe(2);
+      expect(newsletter.sections.length).toBe(3); // intro + paper summary + outro
+      expect(newsletter.sections[1]?.title).toBe(samplePaper.title);
+      expect(newsletter.sections[1]?.paperReferences).toEqual(["2401.55555"]);
+    });
+
+    it("evaluates scheduled queue and checks due delivery status correctly", () => {
+      const pastDate = new Date(Date.now() - 3600000).toISOString();
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+
+      const dueItem = {
+        id: "n-1",
+        status: "scheduled",
+        scheduledAt: pastDate,
+      };
+
+      const futureItem = {
+        id: "n-2",
+        status: "scheduled",
+        scheduledAt: futureDate,
+      };
+
+      const draftItem = {
+        id: "n-3",
+        status: "draft",
+        scheduledAt: pastDate,
+      };
+
+      expect(isDueForDelivery(dueItem)).toBe(true);
+      expect(isDueForDelivery(futureItem)).toBe(false);
+      expect(isDueForDelivery(draftItem)).toBe(false);
+
+      const { due, upcoming } = evaluateScheduledQueue([dueItem, futureItem, draftItem]);
+      expect(due.length).toBe(1);
+      expect(due[0]?.id).toBe("n-1");
+      expect(upcoming.length).toBe(1);
+      expect(upcoming[0]?.id).toBe("n-2");
     });
   });
 });

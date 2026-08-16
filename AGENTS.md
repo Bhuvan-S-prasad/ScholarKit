@@ -69,14 +69,15 @@ scholarkit/
 │   ├── core/
 │   │   └── src/
 │   │       ├── schemas.ts
+│   │       ├── config.ts              # centralized model defaults & configuration
 │   │       ├── operations/
-│   │       │   ├── ingestion.ts
-│   │       │   ├── extraction.ts      # LLM-backed
-│   │       │   ├── analysis.ts        # LLM-backed
-│   │       │   ├── literature.ts      # LLM-backed (classify/rank)
-│   │       │   ├── newsletter.ts
-│   │       │   ├── workflow.ts
-│   │       │   ├── scheduling.ts
+│   │       │   ├── ingestion.ts       # arXiv fetch & multi-paper search parsing
+│   │       │   ├── extraction.ts      # LLM-backed structured extraction & confidence
+│   │       │   ├── analysis.ts        # LLM-backed comparative matrix & gap analysis
+│   │       │   ├── literature.ts      # LLM-backed (4-tier classification, ranking & review draft)
+│   │       │   ├── newsletter.ts      # review-to-newsletter & recent papers roundup synthesis
+│   │       │   ├── workflow.ts        # review state machine transitions
+│   │       │   ├── scheduler.ts       # pure scheduled queue evaluations
 │   │       │   ├── subscribers.ts
 │   │       │   ├── tracking.ts
 │   │       │   ├── llm-client.ts      # injectable model client
@@ -185,22 +186,26 @@ Work through each phase sequentially — each phase completes an entire adapter 
   - `scholarkit paper analyze <paper-ids...>` — compare methodology, findings, and identify research gaps across papers.
 - [x] **Literature Review**:
   - `scholarkit review init <title>` — create new literature review project.
-  - `scholarkit review rank <project-id>` — classify and rank ingested papers against project criteria with LLM.
+  - `scholarkit review search <project-id>` — search arXiv for project query, deduplicate, auto-ingest, and rank.
+  - `scholarkit review rank <project-id>` — classify (4 tiers) and rank ingested papers against project criteria with LLM.
   - `scholarkit review draft <project-id>` — generate structured literature review draft.
+  - `scholarkit review to-newsletter <project-id>` — bridge synthesized review into a structured newsletter issue draft.
 - [x] **Newsletter & Telegram Publishing**:
   - `scholarkit newsletter draft <title>` — create newsletter draft from recent papers or reviews.
   - `scholarkit newsletter transition <id> <action>` — advance review state machine (`submit`, `approve`, `schedule`).
+  - `scholarkit newsletter schedule <id> [time]` — schedule approved issues for future delivery.
+  - `scholarkit newsletter worker [--run-once]` — cron-friendly queue worker to dispatch due scheduled sends to Telegram.
   - `scholarkit newsletter preview <id>` — chunk analysis and formatting.
   - `scholarkit newsletter send <id>` — send digest to Telegram with rate pacing and 4096-char chunking.
 - [x] **Interactive Dashboard (TUI)**:
-  - `scholarkit tui [--dev]` — dual-pane master-detail dashboard with debounced filtering (`/`), full keyboard navigation, arXiv ingestion modal (`[i]`), live extraction (`[e]`), review ranking (`[r]`), draft synthesis (`[d]`), newsletter state machine (`[t]`), and Telegram preview (`[p]`).
+  - `scholarkit tui [--dev]` — dual-pane master-detail dashboard with debounced filtering (`/`), full keyboard navigation, arXiv ingestion modal (`[i]`), live extraction (`[e]`), review project auto-search prompt, on-demand search (`[s]`), review ranking (`[r]`), draft synthesis (`[d]`), review-to-newsletter bridge (`[N]`), contextual workflow hints, editorial approvals (`[a]`/`[c]`), schedule triggers (`[S]`), worker dispatcher (`[w]`), newsletter state machine (`[t]`), and Telegram preview (`[p]`).
 
 ### Phase 2: Local MCP Server (`packages/local-mcp`)
 Expose all validated core domain operations as agent tools over stdio:
 - [ ] Stdio MCP Server setup using `@modelcontextprotocol/sdk`.
 - [ ] Register Paper Tools (`ingest_paper`, `extract_paper`, `analyze_papers`).
-- [ ] Register Literature Review Tools (`create_review_project`, `rank_papers`, `draft_literature_review`).
-- [ ] Register Newsletter & Workflow Tools (`draft_newsletter`, `transition_newsletter_status`, `send_newsletter`).
+- [ ] Register Literature Review Tools (`create_review_project`, `search_arxiv_papers`, `rank_papers`, `draft_literature_review`, `bridge_review_to_newsletter`).
+- [ ] Register Newsletter & Workflow Tools (`draft_newsletter`, `transition_newsletter_status`, `schedule_newsletter`, `dispatch_scheduled_newsletters`, `send_newsletter`).
 - [ ] Connect and test with local IDE / Claude Desktop / Antigravity via `mcp.json`.
 
 ### Phase 3: Remote MCP Server (`apps/remote-mcp`)
@@ -208,7 +213,7 @@ Build multi-client remote MCP deployment:
 - [ ] Hono app with streamable HTTP transport for remote MCP clients.
 - [ ] Clerk authentication middleware for MCP client access control.
 - [ ] Telegram Webhooks for subscriber `/start` & `/stop` management.
-- [ ] Background polling worker / scheduler for scheduled sends.
+- [ ] Background polling worker / scheduler for scheduled sends (using core `evaluateScheduledQueue`).
 - [ ] `apps/remote-mcp/Dockerfile` multi-stage build for container deployment.
 
 ### Phase 4: Agent Skill (`skills/scholarkit-skill`)
@@ -218,7 +223,8 @@ Build multi-client remote MCP deployment:
 
 ## 8. Open decisions (resolved & documented)
 
-- **Literature Review Scope (v1 vs Roadmap)**: **RESOLVED (v1 = Ingested Repository Classification & Synthesis)**. In v1, the Literature Review manager classifies and ranks the repository of ingested papers (`classifyAndRankPapers`), runs in-memory deduplication (`deduplicatePapers`), and generates synthesized drafts (`buildLiteratureReviewDraft`). Multi-provider live web scraping/crawling (Semantic Scholar / PubMed external search) is deferred to future roadmap.
+- **Literature Review Scope (v1 vs Roadmap)**: **RESOLVED (v1 = Ingested Repository Classification & Synthesis + arXiv Query Search)**. In v1, the Literature Review manager queries arXiv Atom API for project research queries (`searchArxivPapers`), deduplicates by arXiv `sourceId` against Neon DB, classifies (into 4 tiers: `highly_relevant`, `relevant`, `background`, `irrelevant`) and ranks papers (`classifyAndRankPapers`), synthesizes structured drafts (`buildLiteratureReviewDraft`), and bridges drafts into newsletters (`createNewsletterFromLiteratureReview`). Multi-provider external search APIs (Semantic Scholar / PubMed) are deferred to future roadmap.
+- **Production Scheduling Mechanism**: **RESOLVED (CLI Cron-Worker + Remote Poller)**. In CLI/standalone mode, `scholarkit newsletter worker --run-once` (triggered via OS cron, GitHub Actions, or task scheduler) is the production queue executor. In Phase 3 (`apps/remote-mcp`), the Hono background scheduler calls the same shared core evaluation logic (`evaluateScheduledQueue`).
 - **Single-user tool vs. multi-subscriber newsletter?** Determines whether `Subscriber`/`DeliveryLog`/webhook/`remote-mcp`+Clerk are needed at all in v1. Default assumption until told otherwise: **build solo-mode first** (CLI and Local MCP), defer the subscriber/delivery machinery.
 - **Channel broadcast vs. per-subscriber DM** for Telegram — DM is implied by "personalize" being in the newsletter spec, but channel is the faster MVP if personalization can wait.
 - Paper sources beyond arXiv (Semantic Scholar, PubMed) — not needed for v1.

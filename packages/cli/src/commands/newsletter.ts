@@ -409,5 +409,175 @@ export function createNewsletterCommand(): Command {
       }
     });
 
+  // --------------------------------------------------------------------------
+  // 6. Schedule Send Time
+  // --------------------------------------------------------------------------
+  newsletterCmd
+    .command("schedule <newsletterId> [time]")
+    .description("Schedule an approved newsletter issue for future delivery (e.g. '+1h', '+30m', 'now', or ISO datetime)")
+    .action(async (newsletterId: string, time?: string) => {
+      try {
+        const newsletter = await prisma.newsletter.findUnique({
+          where: { id: newsletterId },
+        });
+
+        if (!newsletter) {
+          error(`Newsletter "${newsletterId}" not found.`);
+          process.exitCode = 1;
+          return;
+        }
+
+        if (newsletter.status !== "approved" && newsletter.status !== "scheduled") {
+          warn(`Newsletter is in '${newsletter.status}' state. It is recommended to approve before scheduling.`);
+        }
+
+        let scheduledDate = new Date(Date.now() + 3600000); // default 1h from now
+        if (time) {
+          if (time === "now") {
+            scheduledDate = new Date();
+          } else if (time.startsWith("+") && time.endsWith("h")) {
+            const hours = parseFloat(time.slice(1, -1)) || 1;
+            scheduledDate = new Date(Date.now() + hours * 3600000);
+          } else if (time.startsWith("+") && time.endsWith("m")) {
+            const mins = parseFloat(time.slice(1, -1)) || 30;
+            scheduledDate = new Date(Date.now() + mins * 60000);
+          } else {
+            const parsed = new Date(time);
+            if (!isNaN(parsed.getTime())) {
+              scheduledDate = parsed;
+            }
+          }
+        }
+
+        const updated = await prisma.newsletter.update({
+          where: { id: newsletter.id },
+          data: {
+            status: "scheduled",
+            scheduledAt: scheduledDate,
+          },
+        });
+
+        banner("Newsletter Scheduled", updated.title);
+        console.log(`Scheduled for: ${colors.cyan}${scheduledDate.toISOString()}${colors.reset} (${scheduledDate.toLocaleString()})`);
+        info("Run 'scholarkit newsletter worker --run-once' or wait for background dispatcher to send.");
+      } catch (err) {
+        error(`Failed to schedule newsletter: ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  // --------------------------------------------------------------------------
+  // 7. Scheduled Sending Queue Worker (Cron-compatible)
+  // --------------------------------------------------------------------------
+  newsletterCmd
+    .command("worker")
+    .description("Execute worker to process and dispatch due scheduled newsletters to Telegram (cron-friendly)")
+    .option("--run-once", "Process the current queue once and exit", true)
+    .option("-c, --chat-id <chatId>", "Default Telegram Chat ID override")
+    .action(async (options: { runOnce: boolean; chatId?: string }) => {
+      try {
+        const { evaluateScheduledQueue } = await import("@scholarkit/core");
+
+        const scheduledNewsletters = await prisma.newsletter.findMany({
+          where: { status: "scheduled" },
+          include: { sections: { orderBy: { order: "asc" } } },
+        });
+
+        if (scheduledNewsletters.length === 0) {
+          info("No scheduled newsletters in queue.");
+          return;
+        }
+
+        const now = new Date();
+        const { due, upcoming } = evaluateScheduledQueue(scheduledNewsletters, now);
+
+        banner("Scheduled Send Queue Worker", `Active queue: ${scheduledNewsletters.length} issue(s)`);
+        console.log(`Due for immediate delivery: ${colors.green}${due.length}${colors.reset} | Upcoming: ${colors.dim}${upcoming.length}${colors.reset}`);
+
+        if (due.length === 0) {
+          info("All scheduled issues are pending future send times.");
+          return;
+        }
+
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        if (!botToken || botToken.includes("123456789")) {
+          error("Valid TELEGRAM_BOT_TOKEN not found in environment. Cannot dispatch queued newsletters.");
+          process.exitCode = 1;
+          return;
+        }
+
+        for (const nl of due) {
+          const targetChatId = options.chatId || (process.env.TELEGRAM_CHAT_ID as string);
+          if (!targetChatId) {
+            warn(`Skipping issue "${nl.title}" [${nl.id}]: No target Telegram chat ID configured.`);
+            continue;
+          }
+
+          info(`Dispatching issue #${nl.issueNumber || "—"} "${nl.title}" to ${targetChatId}...`);
+
+          try {
+            await prisma.newsletter.update({
+              where: { id: nl.id },
+              data: { status: "sending" },
+            });
+
+            const html = formatNewsletterForTelegramHtml({
+              title: nl.title,
+              issueNumber: nl.issueNumber || undefined,
+              contentType: nl.contentType,
+              status: "sending",
+              target: nl.target,
+              sections: nl.sections.map((s) => ({
+                title: s.title,
+                content: s.content,
+                order: s.order,
+                sectionType: s.sectionType as any,
+                paperReferences: s.paperReferences,
+              })),
+            });
+
+            const chunks = chunkTelegramMessage(html, targetChatId, 4096);
+            const result = await sendTelegramChunks(botToken, chunks, 1000);
+
+            await prisma.deliveryLog.create({
+              data: {
+                newsletterId: nl.id,
+                telegramChatId: targetChatId,
+                status: "sent",
+                sentAt: new Date(),
+              },
+            });
+
+            await prisma.newsletter.update({
+              where: { id: nl.id },
+              data: {
+                status: "sent",
+                sentAt: new Date(),
+              },
+            });
+
+            success(`Dispatched issue "${nl.title}" (${result.successfulChunks}/${result.totalChunks} chunks).`);
+          } catch (sendErr) {
+            error(`Failed dispatch for issue "${nl.title}": ${(sendErr as Error).message}`);
+            await prisma.deliveryLog.create({
+              data: {
+                newsletterId: nl.id,
+                telegramChatId: targetChatId,
+                status: "failed",
+                errorMessage: (sendErr as Error).message,
+              },
+            });
+            await prisma.newsletter.update({
+              where: { id: nl.id },
+              data: { status: "failed" },
+            });
+          }
+        }
+      } catch (err) {
+        error(`Scheduler worker encountered an error: ${(err as Error).message}`);
+        process.exitCode = 1;
+      }
+    });
+
   return newsletterCmd;
 }
