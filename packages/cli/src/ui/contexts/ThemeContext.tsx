@@ -50,7 +50,10 @@ const ThemeContext = createContext<ThemeContextValue>({
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isNoColor = Boolean(
-    process.env.NO_COLOR || process.env.TERM === "dumb" || !process.stdout.isTTY
+    process.env.NO_COLOR ||
+      process.env.TERM === "dumb" ||
+      process.argv.includes("--plain") ||
+      !process.stdout.isTTY
   );
 
   const value = useMemo(
