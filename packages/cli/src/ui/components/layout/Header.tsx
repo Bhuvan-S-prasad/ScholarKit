@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { SCHOLARKIT_CONFIG } from "@scholarkit/core";
 import { useTheme } from "../../contexts/ThemeContext.js";
 
 export interface HeaderProps {
@@ -8,7 +9,7 @@ export interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ activeTabTitle }) => {
   const { colors, isNoColor } = useTheme();
-  const modelName = process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
+  const modelName = process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
 
   return (
     <Box

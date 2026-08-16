@@ -9,6 +9,7 @@ import {
   createMockLLMClient,
   PaperMetadata,
   LitReviewProject,
+  SCHOLARKIT_CONFIG,
 } from "@scholarkit/core";
 import { prisma } from "@scholarkit/db";
 import { ThemeProvider } from "./contexts/ThemeContext.js";
@@ -71,6 +72,9 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
   const [isTransitionOpen, setIsTransitionOpen] = useState<boolean>(false);
   const [isTelegramPreviewOpen, setIsTelegramPreviewOpen] = useState<boolean>(false);
 
+  // Action error state
+  const [actionError, setActionError] = useState<string | null>(null);
+
   const selectedPaper = papers[selectedIndex] || null;
   const selectedProject = projects[selectedIndex] || null;
   const selectedNewsletter = newsletters[selectedIndex] || null;
@@ -79,6 +83,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
   const handleExtractPaper = async (useStub: boolean) => {
     if (!selectedPaper || isExtracting) return;
     setIsExtracting(true);
+    setActionError(null);
 
     try {
       const paperMeta: PaperMetadata = {
@@ -101,7 +106,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
         extractionResult = createStubExtraction(paperMeta);
       } else {
         const apiKey = process.env.OPENROUTER_API_KEY;
-        const model = process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
+        const model = process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
         if (!apiKey) {
           setExtractionProgress("OPENROUTER_API_KEY missing. Falling back to stub extraction...");
           extractionResult = createStubExtraction(paperMeta);
@@ -145,6 +150,8 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
       });
 
       await refreshPapers();
+    } catch (err) {
+      setActionError(`Extraction failed: ${(err as Error).message}`);
     } finally {
       setIsExtracting(false);
       setExtractionProgress("");
@@ -155,6 +162,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
   const handleRankPapers = async () => {
     if (!selectedProject || isRanking || papers.length === 0) return;
     setIsRanking(true);
+    setActionError(null);
     setRankingProgress(`Ranking ${papers.length} paper(s) against query...`);
 
     try {
@@ -183,7 +191,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
       };
 
       const apiKey = process.env.OPENROUTER_API_KEY;
-      const model = process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
+      const model = process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
 
       let entries;
       if (apiKey) {
@@ -231,6 +239,8 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
       }
 
       await refreshProjects();
+    } catch (err) {
+      setActionError(`Ranking failed: ${(err as Error).message}`);
     } finally {
       setIsRanking(false);
       setRankingProgress("");
@@ -439,6 +449,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
                 paper={selectedPaper}
                 extracting={isExtracting}
                 extractionProgressText={extractionProgress}
+                error={actionError}
               />
             ) : activeTab === "reviews" ? (
               <ReviewDetailView

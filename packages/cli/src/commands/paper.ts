@@ -10,6 +10,7 @@ import {
   comparePapers,
   PaperExtraction,
   PaperMetadata,
+  SCHOLARKIT_CONFIG,
 } from "@scholarkit/core";
 import { prisma } from "@scholarkit/db";
 import { banner, section, success, info, warn, error, confidenceBadge, colors } from "../utils/output.js";
@@ -149,7 +150,7 @@ export function createPaperCommand(): Command {
     .command("extract <identifier>")
     .description("Extract structured methodology, findings, and limitations from a paper")
     .option("--stub", "Generate a deterministic stub extraction without calling the LLM")
-    .option("--model <model>", "OpenRouter model name to use (defaults to OPENROUTER_MODEL env or gpt-oss-20b:free)")
+    .option("--model <model>", `OpenRouter model name to use (defaults to OPENROUTER_MODEL env or ${SCHOLARKIT_CONFIG.defaultModel})`)
     .option("--json", "Output extraction as JSON")
     .option("--plain", "Output extraction in plain linear text")
     .action(async (identifier: string, options: { stub?: boolean; model?: string; json?: boolean; plain?: boolean }) => {
@@ -198,7 +199,7 @@ export function createPaperCommand(): Command {
             if (!options.json) warn("OPENROUTER_API_KEY not found in environment. Falling back to stub extraction (or set OPENROUTER_API_KEY in .env).");
             extraction = createStubExtraction(paperMetadata);
           } else {
-            const selectedModel = options.model || process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
+            const selectedModel = options.model || process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
             if (!options.json) info(`Extracting with OpenRouter (Model: ${selectedModel})...`);
 
             const llm = createOpenRouterClient({

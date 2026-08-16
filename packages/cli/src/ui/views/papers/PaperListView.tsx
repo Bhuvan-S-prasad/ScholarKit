@@ -121,16 +121,16 @@ export const PaperListView: React.FC<PaperListViewProps> = ({
               <Box
                 key={paper.id}
                 justifyContent="space-between"
-                paddingX={1}
+                paddingX={0}
               >
-                <Box gap={1} width="65%">
+                <Box gap={1}>
                   <Text
                     bold={isSelected}
                     color={!isNoColor && isSelected ? colors.primary : undefined}
                   >
-                    {isSelected ? "▶" : " "} {paper.sourceId}
+                    {isSelected ? "▶" : " "} {paper.sourceId.slice(0, 13)}
                   </Text>
-                  <Text dimColor>{paper.title.slice(0, 16)}...</Text>
+                  <Text dimColor>{paper.title.slice(0, 10)}..</Text>
                 </Box>
                 <TextStatusBadge status={paper.status} />
               </Box>

@@ -6,6 +6,7 @@ import {
   createOpenRouterClient,
   createMockLLMClient,
   LitReviewProject,
+  SCHOLARKIT_CONFIG,
 } from "@scholarkit/core";
 import { ProjectWithEntries } from "../../contexts/AppStateContext.js";
 import { StatusSpinner } from "../../components/common/StatusSpinner.js";
@@ -76,7 +77,7 @@ export const ReviewDraftModal: React.FC<ReviewDraftModalProps> = ({
         }));
 
         const apiKey = process.env.OPENROUTER_API_KEY;
-        const model = process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
+        const model = process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
 
         let result;
         if (apiKey && entriesWithPapers.length > 0) {

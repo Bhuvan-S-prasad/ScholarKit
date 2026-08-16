@@ -8,6 +8,7 @@ import {
   LitReviewProject,
   LitReviewEntry,
   PaperMetadata,
+  SCHOLARKIT_CONFIG,
 } from "@scholarkit/core";
 import { prisma } from "@scholarkit/db";
 import { banner, section, success, info, warn, error, colors } from "../utils/output.js";
@@ -156,7 +157,7 @@ export function createReviewCommand(): Command {
         };
 
         const apiKey = process.env.OPENROUTER_API_KEY;
-        const selectedModel = options.model || process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
+        const selectedModel = options.model || process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
 
         let entries: LitReviewEntry[];
         if (apiKey) {

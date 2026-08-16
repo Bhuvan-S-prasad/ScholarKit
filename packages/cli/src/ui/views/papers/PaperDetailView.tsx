@@ -10,12 +10,14 @@ export interface PaperDetailViewProps {
   paper: PaperWithExtraction | null;
   extracting: boolean;
   extractionProgressText?: string;
+  error?: string | null;
 }
 
 export const PaperDetailView: React.FC<PaperDetailViewProps> = ({
   paper,
   extracting,
   extractionProgressText = "Extracting methodology via OpenRouter...",
+  error,
 }) => {
   const { colors, isNoColor } = useTheme();
 
@@ -43,6 +45,12 @@ export const PaperDetailView: React.FC<PaperDetailViewProps> = ({
 
   return (
     <Box flexDirection="column" gap={1}>
+      {error && (
+        <Box borderStyle="single" borderColor="red" paddingX={1}>
+          <Text color="red">Error: {error}</Text>
+        </Box>
+      )}
+
       {/* Title & Status */}
       <Box justifyContent="space-between">
         <Text bold color={isNoColor ? undefined : colors.primary}>
