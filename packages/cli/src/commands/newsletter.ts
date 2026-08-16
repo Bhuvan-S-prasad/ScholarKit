@@ -64,12 +64,19 @@ export function createNewsletterCommand(): Command {
         }
 
         // Build sections
-        const sectionsData = [
+        type SectionType = "intro" | "deep_dive" | "quick_take" | "methodology_spotlight" | "outro" | "custom";
+        const sectionsData: Array<{
+          title: string;
+          content: string;
+          order: number;
+          sectionType: SectionType;
+          paperReferences: string[];
+        }> = [
           {
             title: "Executive Overview",
             content: `Welcome to this edition of ScholarKit Research Digest! Today we highlight breakthrough developments in automated intelligence and computational efficiency.`,
             order: 1,
-            sectionType: "intro" as const,
+            sectionType: "intro",
             paperReferences: [],
           },
         ];
@@ -145,15 +152,30 @@ export function createNewsletterCommand(): Command {
   newsletterCmd
     .command("list")
     .description("List all newsletters and their review workflow states")
-    .action(async () => {
+    .option("--json", "Output newsletters as raw JSON")
+    .option("--plain", "Output plain linear text without ANSI formatting")
+    .action(async (options: { json?: boolean; plain?: boolean }) => {
       try {
         const newsletters = await prisma.newsletter.findMany({
           orderBy: { createdAt: "desc" },
           include: { sections: true },
         });
 
+        if (options.json) {
+          console.log(JSON.stringify(newsletters, null, 2));
+          return;
+        }
+
         if (newsletters.length === 0) {
           info("No newsletters found. Create your first draft with 'scholarkit newsletter draft \"Title\"'.");
+          return;
+        }
+
+        if (options.plain) {
+          console.log(`TOTAL NEWSLETTERS: ${newsletters.length}`);
+          for (const n of newsletters) {
+            console.log(`[${n.id}] #${n.issueNumber || "—"} ${n.title} | Status: [${n.status.toUpperCase()}] | Sections: ${n.sections.length} | Target: ${n.target}`);
+          }
           return;
         }
 

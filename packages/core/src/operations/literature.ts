@@ -45,16 +45,81 @@ export function deduplicatePapers(papers: PaperMetadata[]): PaperMetadata[] {
   return unique;
 }
 
-const ClassificationListSchema = z.object({
-  evaluations: z.array(
-    z.object({
-      paperId: z.string(),
-      relevanceScore: z.number().min(0).max(1),
-      classification: z.enum(["highly_relevant", "relevant", "background", "irrelevant"]),
-      reasonForScore: z.string(),
-    })
-  ),
-});
+const SingleEvaluationSchema = z.preprocess(
+  (val: unknown) => {
+    if (typeof val === "object" && val !== null) {
+      const obj = val as Record<string, unknown>;
+
+      let relevanceScore = 0.8;
+      const rawScore = obj.relevanceScore ?? obj.relevance_score ?? obj.relevance ?? obj.score;
+      if (typeof rawScore === "number") {
+        relevanceScore = rawScore > 1 && rawScore <= 100 ? rawScore / 100 : rawScore;
+      } else if (typeof rawScore === "string") {
+        const parsed = parseFloat(rawScore);
+        if (!isNaN(parsed)) {
+          relevanceScore = parsed > 1 && parsed <= 100 ? parsed / 100 : parsed;
+        }
+      }
+
+      let rawClass = String(obj.classification || obj.category || obj.rank || "")
+        .toLowerCase()
+        .replace(/[\s-]+/g, "_");
+      if (!["highly_relevant", "relevant", "background", "irrelevant"].includes(rawClass)) {
+        if (relevanceScore >= 0.8) rawClass = "highly_relevant";
+        else if (relevanceScore >= 0.6) rawClass = "relevant";
+        else if (relevanceScore >= 0.4) rawClass = "background";
+        else rawClass = "irrelevant";
+      }
+
+      const reasonForScore = String(
+        obj.reasonForScore ||
+          obj.reason_for_score ||
+          obj.reason ||
+          obj.justification ||
+          obj.explanation ||
+          "Evaluated relevance against research criteria."
+      );
+
+      return {
+        paperId: String(obj.paperId || obj.paper_id || obj.id || "paper"),
+        relevanceScore: Math.min(1, Math.max(0, relevanceScore)),
+        classification: rawClass,
+        reasonForScore,
+      };
+    }
+    return val;
+  },
+  z.object({
+    paperId: z.string(),
+    relevanceScore: z.number().min(0).max(1),
+    classification: z.enum(["highly_relevant", "relevant", "background", "irrelevant"]),
+    reasonForScore: z.string(),
+  })
+);
+
+const ClassificationListSchema = z.preprocess(
+  (val: unknown) => {
+    if (Array.isArray(val)) {
+      return { evaluations: val };
+    }
+    if (typeof val === "object" && val !== null) {
+      const obj = val as Record<string, unknown>;
+      const list =
+        obj.evaluations ||
+        obj.papers ||
+        obj.results ||
+        obj.classifications ||
+        obj.rankings ||
+        obj.items ||
+        [];
+      return { evaluations: Array.isArray(list) ? list : [list] };
+    }
+    return { evaluations: [] };
+  },
+  z.object({
+    evaluations: z.array(SingleEvaluationSchema),
+  })
+);
 
 /**
  * Classifies and ranks paper relevance against a project's research criteria.

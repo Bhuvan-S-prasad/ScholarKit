@@ -10,6 +10,7 @@ import {
   comparePapers,
   PaperExtraction,
   PaperMetadata,
+  SCHOLARKIT_CONFIG,
 } from "@scholarkit/core";
 import { prisma } from "@scholarkit/db";
 import { banner, section, success, info, warn, error, confidenceBadge, colors } from "../utils/output.js";
@@ -93,15 +94,32 @@ export function createPaperCommand(): Command {
   paperCmd
     .command("list")
     .description("List all papers stored in the database")
-    .action(async () => {
+    .option("--json", "Output results as raw JSON")
+    .option("--plain", "Output plain linear text without ANSI formatting")
+    .action(async (options: { json?: boolean; plain?: boolean }) => {
       try {
         const papers = await prisma.paper.findMany({
           orderBy: { createdAt: "desc" },
           include: { extraction: true },
         });
 
+        if (options.json) {
+          console.log(JSON.stringify(papers, null, 2));
+          return;
+        }
+
         if (papers.length === 0) {
           info("No papers found in database. Ingest your first paper using 'scholarkit paper ingest <arxiv-id>'.");
+          return;
+        }
+
+        if (options.plain) {
+          console.log(`TOTAL PAPERS: ${papers.length}`);
+          for (const p of papers) {
+            const conf = p.extraction ? confidenceBadge(p.extraction.confidence) : "[NOT EXTRACTED]";
+            console.log(`[${p.sourceId}] ${p.title} | Status: [${p.status.toUpperCase()}] | Confidence: ${conf}`);
+            console.log(`  Authors: ${p.authors.join(", ")} | Date: ${p.publishedDate} | URL: ${p.url}`);
+          }
           return;
         }
 
@@ -132,8 +150,10 @@ export function createPaperCommand(): Command {
     .command("extract <identifier>")
     .description("Extract structured methodology, findings, and limitations from a paper")
     .option("--stub", "Generate a deterministic stub extraction without calling the LLM")
-    .option("--model <model>", "OpenRouter model name to use (defaults to OPENROUTER_MODEL env or gpt-oss-20b:free)")
-    .action(async (identifier: string, options: { stub?: boolean; model?: string }) => {
+    .option("--model <model>", `OpenRouter model name to use (defaults to OPENROUTER_MODEL env or ${SCHOLARKIT_CONFIG.defaultModel})`)
+    .option("--json", "Output extraction as JSON")
+    .option("--plain", "Output extraction in plain linear text")
+    .action(async (identifier: string, options: { stub?: boolean; model?: string; json?: boolean; plain?: boolean }) => {
       try {
         const cleanId = normalizeArxivId(identifier);
 
@@ -150,7 +170,9 @@ export function createPaperCommand(): Command {
           return;
         }
 
-        banner("Paper Extraction", paper.title);
+        if (!options.json && !options.plain) {
+          banner("Paper Extraction", paper.title);
+        }
 
         let extraction: PaperExtraction;
 
@@ -169,16 +191,16 @@ export function createPaperCommand(): Command {
         };
 
         if (options.stub) {
-          info("Running deterministic stub extraction (--stub requested)...");
+          if (!options.json) info("Running deterministic stub extraction (--stub requested)...");
           extraction = createStubExtraction(paperMetadata);
         } else {
           const apiKey = process.env.OPENROUTER_API_KEY;
           if (!apiKey) {
-            warn("OPENROUTER_API_KEY not found in environment. Falling back to stub extraction (or set OPENROUTER_API_KEY in .env).");
+            if (!options.json) warn("OPENROUTER_API_KEY not found in environment. Falling back to stub extraction (or set OPENROUTER_API_KEY in .env).");
             extraction = createStubExtraction(paperMetadata);
           } else {
-            const selectedModel = options.model || process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
-            info(`Extracting with OpenRouter (Model: ${selectedModel})...`);
+            const selectedModel = options.model || process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
+            if (!options.json) info(`Extracting with OpenRouter (Model: ${selectedModel})...`);
 
             const llm = createOpenRouterClient({
               apiKey,
@@ -222,6 +244,27 @@ export function createPaperCommand(): Command {
           where: { id: paper.id },
           data: { status: "extracted" },
         });
+
+        if (options.json) {
+          console.log(JSON.stringify({ paper, extraction, confidenceEvaluation: confResult }, null, 2));
+          return;
+        }
+
+        if (options.plain) {
+          console.log(`PAPER: ${paper.title} [${paper.sourceId}]`);
+          console.log(`CONFIDENCE: ${confidenceBadge(extraction.confidence)}`);
+          if (confResult.flagForHumanReview) {
+            console.log(`FLAG: ${confResult.reason || "Confidence flagged for human review."}`);
+          }
+          console.log(`METHODOLOGY: ${extraction.methodology.approach}`);
+          if (extraction.methodology.datasetInfo) {
+            console.log(`DATASETS: ${extraction.methodology.datasetInfo}`);
+          }
+          console.log(`KEY FINDINGS:\n${extraction.keyFindings.map((f) => `  - ${f}`).join("\n")}`);
+          console.log(`CONTRIBUTIONS:\n${extraction.contributions.map((c) => `  - ${c}`).join("\n")}`);
+          console.log(`LIMITATIONS:\n${extraction.limitations.map((l) => `  - ${l}`).join("\n")}`);
+          return;
+        }
 
         // Print Results
         section("Extraction Results");

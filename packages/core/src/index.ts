@@ -12,3 +12,4 @@ export * from "./operations/newsletter.js";
 export * from "./operations/publish/telegram.js";
 export * from "./operations/subscribers.js";
 export * from "./operations/tracking.js";
+export * from "./config.js";

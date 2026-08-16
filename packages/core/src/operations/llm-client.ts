@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SCHOLARKIT_CONFIG } from "../config.js";
 
 // ============================================================================
 // Errors
@@ -58,10 +59,19 @@ export interface LLMClient {
  */
 export function extractJsonFromText(rawText: string): unknown {
   let cleaned = rawText.trim();
-  // Strip ```json ... ``` or ``` ... ``` code blocks
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+
+  // Match ```json ... ``` code blocks anywhere in the text
+  const codeBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch && codeBlockMatch[1]) {
+    cleaned = codeBlockMatch[1].trim();
+  } else {
+    // If no explicit code block, extract outermost { ... }
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      cleaned = jsonMatch[0].trim();
+    }
   }
+
   try {
     return JSON.parse(cleaned);
   } catch (err) {
@@ -137,10 +147,10 @@ export interface OpenRouterClientOptions {
 export function createOpenRouterClient(options: OpenRouterClientOptions): LLMClient {
   const {
     apiKey,
-    defaultModel = "openai/gpt-oss-20b:free",
-    siteUrl = "https://github.com/Bhuvan-S-prasad/ScholarKit",
-    appName = "ScholarKit",
-    baseUrl = "https://openrouter.ai/api/v1/chat/completions",
+    defaultModel = SCHOLARKIT_CONFIG.defaultModel,
+    siteUrl = SCHOLARKIT_CONFIG.siteUrl,
+    appName = SCHOLARKIT_CONFIG.appName,
+    baseUrl = SCHOLARKIT_CONFIG.openRouterApiUrl,
   } = options;
 
   if (!apiKey) {

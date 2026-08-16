@@ -17,9 +17,21 @@ program.addCommand(createPaperCommand());
 program.addCommand(createReviewCommand());
 program.addCommand(createNewsletterCommand());
 
-// Top-level help banner
+// Interactive Dashboard Command
+program
+  .command("tui")
+  .description("Launch the interactive terminal dashboard (lazygit / k9s style)")
+  .option("-t, --tab <tab>", "Initial tab to open: papers | reviews | newsletters", "papers")
+  .option("--dev", "Enable developer testing hotkeys (such as offline stub extraction)")
+  .action(async (options: { tab?: "papers" | "reviews" | "newsletters"; dev?: boolean }) => {
+    const { launchTui } = await import("./ui/index.js");
+    await launchTui({ initialTab: options.tab });
+  });
+
+// Launch TUI by default when no arguments are passed
 if (!process.argv.slice(2).length) {
-  program.outputHelp();
+  const { launchTui } = await import("./ui/index.js");
+  await launchTui();
 } else {
   program.parse(process.argv);
 }

@@ -8,6 +8,7 @@ import {
   LitReviewProject,
   LitReviewEntry,
   PaperMetadata,
+  SCHOLARKIT_CONFIG,
 } from "@scholarkit/core";
 import { prisma } from "@scholarkit/db";
 import { banner, section, success, info, warn, error, colors } from "../utils/output.js";
@@ -62,15 +63,30 @@ export function createReviewCommand(): Command {
   reviewCmd
     .command("list")
     .description("List all literature review projects")
-    .action(async () => {
+    .option("--json", "Output projects as raw JSON")
+    .option("--plain", "Output plain linear text without ANSI formatting")
+    .action(async (options: { json?: boolean; plain?: boolean }) => {
       try {
         const projects = await prisma.litReviewProject.findMany({
           orderBy: { createdAt: "desc" },
           include: { entries: true },
         });
 
+        if (options.json) {
+          console.log(JSON.stringify(projects, null, 2));
+          return;
+        }
+
         if (projects.length === 0) {
           info("No review projects found. Create one using 'scholarkit review init \"Topic Title\" --query \"...\"'.");
+          return;
+        }
+
+        if (options.plain) {
+          console.log(`TOTAL PROJECTS: ${projects.length}`);
+          for (const p of projects) {
+            console.log(`[${p.id}] ${p.title} | Status: [${p.status.toUpperCase()}] | Query: "${p.query}" | Ranked Papers: ${p.entries.length}`);
+          }
           return;
         }
 
@@ -141,7 +157,7 @@ export function createReviewCommand(): Command {
         };
 
         const apiKey = process.env.OPENROUTER_API_KEY;
-        const selectedModel = options.model || process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
+        const selectedModel = options.model || process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
 
         let entries: LitReviewEntry[];
         if (apiKey) {
