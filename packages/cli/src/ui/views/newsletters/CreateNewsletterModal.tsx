@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
+import { createNewsletterFromRecentPapers, PaperMetadata } from "@scholarkit/core";
 import { prisma } from "@scholarkit/db";
 import { StatusSpinner } from "../../components/common/StatusSpinner.js";
 import { useTheme } from "../../contexts/ThemeContext.js";
@@ -39,60 +40,48 @@ export const CreateNewsletterModal: React.FC<CreateNewsletterModalProps> = ({
       const recentPapers = await prisma.paper.findMany({
         take: 3,
         orderBy: { createdAt: "desc" },
-        include: { extraction: true },
       });
+
+      if (recentPapers.length === 0) {
+        throw new Error("No papers found in database. Ingest papers first via Tab 1 [i].");
+      }
 
       const count = await prisma.newsletter.count();
       const issueNumber = count + 1;
 
-      type SectionType = "intro" | "deep_dive" | "quick_take" | "methodology_spotlight" | "outro" | "custom";
-      const sectionsData: Array<{
-        title: string;
-        content: string;
-        order: number;
-        sectionType: SectionType;
-        paperReferences: string[];
-      }> = [
-        {
-          title: "Executive Overview",
-          content: `Welcome to issue #${issueNumber} of ScholarKit Research Digest! In this issue, we highlight key findings across recent AI systems and machine learning papers.`,
-          order: 1,
-          sectionType: "intro",
-          paperReferences: [],
-        },
-      ];
+      const domainPapers: PaperMetadata[] = recentPapers.map((p) => ({
+        id: p.id,
+        title: p.title,
+        authors: p.authors,
+        abstract: p.abstract,
+        publishedDate: p.publishedDate,
+        source: p.source as any,
+        sourceId: p.sourceId,
+        url: p.url,
+        pdfUrl: p.pdfUrl || undefined,
+        categories: p.categories,
+        status: p.status as any,
+        rawContent: p.rawContent || undefined,
+        createdAt: p.createdAt.toISOString(),
+        updatedAt: p.updatedAt.toISOString(),
+      }));
 
-      let orderIdx = 2;
-      for (const p of recentPapers) {
-        const text = p.extraction?.keyFindings && p.extraction.keyFindings.length > 0
-          ? p.extraction.keyFindings.map((f) => `• ${f}`).join("\n")
-          : p.abstract;
-
-        sectionsData.push({
-          title: `Deep Dive: ${p.title}`,
-          content: text,
-          order: orderIdx++,
-          sectionType: "deep_dive",
-          paperReferences: [p.sourceId],
-        });
-      }
-
-      sectionsData.push({
-        title: "Looking Ahead",
-        content: "Subscribe to stay updated with autonomous intelligence and systems engineering.",
-        order: orderIdx,
-        sectionType: "outro",
-        paperReferences: [],
+      // Use core pure operation
+      const newsletterDraft = createNewsletterFromRecentPapers(domainPapers, {
+        title: titleVal.trim(),
+        issueNumber,
+        target: "telegram_channel",
       });
 
       await prisma.newsletter.create({
         data: {
-          title: titleVal.trim(),
-          issueNumber,
-          status: "draft",
-          target: "telegram_channel",
+          title: newsletterDraft.title,
+          issueNumber: newsletterDraft.issueNumber,
+          contentType: newsletterDraft.contentType,
+          status: newsletterDraft.status,
+          target: newsletterDraft.target,
           sections: {
-            create: sectionsData.map((s) => ({
+            create: newsletterDraft.sections.map((s) => ({
               title: s.title,
               content: s.content,
               order: s.order,
@@ -126,14 +115,14 @@ export const CreateNewsletterModal: React.FC<CreateNewsletterModalProps> = ({
     >
       <Box justifyContent="space-between" marginBottom={1}>
         <Text bold color={isNoColor ? undefined : colors.primary}>
-          Draft New Newsletter Issue
+          Draft New Newsletter Issue (Recent Papers Roundup)
         </Text>
         <Text dimColor>[Esc to cancel]</Text>
       </Box>
 
       {loading ? (
         <Box paddingY={1}>
-          <StatusSpinner label="Assembling sections from recent papers in Neon DB..." />
+          <StatusSpinner label="Generating structured issue sections via core engine..." />
         </Box>
       ) : (
         <Box flexDirection="column" gap={1}>
@@ -147,7 +136,7 @@ export const CreateNewsletterModal: React.FC<CreateNewsletterModalProps> = ({
             />
           </Box>
           {error && <Text color="red">Error: {error}</Text>}
-          <Text dimColor>Type title and press Enter to auto-generate issue sections from recent papers.</Text>
+          <Text dimColor>Type title and press Enter to auto-generate roundup sections from recent papers.</Text>
         </Box>
       )}
     </Box>

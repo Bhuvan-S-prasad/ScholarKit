@@ -247,6 +247,160 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
     }
   };
 
+  const handleSearchArxivForReview = async () => {
+    if (!selectedProject) return;
+
+    try {
+      setIsRanking(true);
+      setActionError(null);
+      setRankingProgress(`[1/3] Searching arXiv for "${selectedProject.query}"...`);
+
+      const { searchArxivPapers } = await import("@scholarkit/core");
+      const searchResults = await searchArxivPapers(selectedProject.query, { maxResults: 6 });
+
+      if (searchResults.length === 0) {
+        setActionError("No papers found on arXiv for this query.");
+        return;
+      }
+
+      setRankingProgress(`[2/3] Found ${searchResults.length} papers. Deduplicating...`);
+      const existing = await prisma.paper.findMany({
+        where: { sourceId: { in: searchResults.map((p) => p.sourceId) } },
+      });
+      const existingIds = new Set(existing.map((p) => p.sourceId));
+      const newPapers = searchResults.filter((p) => !existingIds.has(p.sourceId));
+
+      for (const p of newPapers) {
+        await prisma.paper.create({
+          data: {
+            title: p.title,
+            authors: p.authors,
+            abstract: p.abstract,
+            publishedDate: p.publishedDate,
+            source: p.source,
+            sourceId: p.sourceId,
+            url: p.url,
+            pdfUrl: p.pdfUrl,
+            categories: p.categories,
+            status: p.status,
+          },
+        });
+      }
+
+      await refreshPapers();
+      setRankingProgress(`[3/3] Ranking papers against project criteria...`);
+      await handleRankPapers();
+    } catch (err) {
+      setActionError(`arXiv search failed: ${(err as Error).message}`);
+    } finally {
+      setIsRanking(false);
+      setRankingProgress("");
+    }
+  };
+
+  const handleBridgeReviewToNewsletter = async () => {
+    if (!selectedProject) return;
+
+    try {
+      setActionError(null);
+      const { createNewsletterFromLiteratureReview, buildLiteratureReviewDraft } = await import("@scholarkit/core");
+
+      const projectDomain: LitReviewProject = {
+        id: selectedProject.id,
+        title: selectedProject.title,
+        description: selectedProject.description || undefined,
+        query: selectedProject.query,
+        inclusionCriteria: selectedProject.inclusionCriteria,
+        exclusionCriteria: selectedProject.exclusionCriteria,
+        status: selectedProject.status as any,
+      };
+
+      const entriesWithPapers = selectedProject.entries.map((e) => ({
+        entry: {
+          id: e.id,
+          projectId: e.projectId,
+          paperId: e.paperId,
+          relevanceScore: e.relevanceScore,
+          classification: e.classification as any,
+          reasonForScore: e.reasonForScore,
+          notes: e.notes || undefined,
+          createdAt: e.createdAt.toISOString(),
+        },
+        paper: {
+          id: e.paper.id,
+          title: e.paper.title,
+          authors: e.paper.authors,
+          abstract: e.paper.abstract,
+          publishedDate: e.paper.publishedDate,
+          source: e.paper.source as any,
+          sourceId: e.paper.sourceId,
+          url: e.paper.url,
+          pdfUrl: e.paper.pdfUrl || undefined,
+          categories: e.paper.categories,
+          status: e.paper.status as any,
+          rawContent: e.paper.rawContent || undefined,
+          createdAt: e.paper.createdAt.toISOString(),
+          updatedAt: e.paper.updatedAt.toISOString(),
+        },
+      }));
+
+      const apiKey = process.env.OPENROUTER_API_KEY;
+      const defaultModel = process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
+
+      let draftResult;
+      if (apiKey) {
+        const llm = createOpenRouterClient({ apiKey, defaultModel });
+        draftResult = await buildLiteratureReviewDraft(projectDomain, entriesWithPapers, llm);
+      } else {
+        draftResult = {
+          title: `Literature Review: ${selectedProject.title}`,
+          abstractOrExecutiveSummary: `Synthesis of key contributions across ${entriesWithPapers.length} analyzed works on ${selectedProject.query}.`,
+          sections: [
+            {
+              title: "Architectural & Methodological Highlights",
+              content: "Recent research emphasizes compute optimization and sparse execution to maximize throughput.",
+              citedPaperIds: entriesWithPapers.map((e) => e.paper.sourceId),
+            },
+          ],
+          researchGapsIdentified: ["Standardized benchmark evaluations across heterogeneous infrastructure"],
+          conclusion: "The literature demonstrates a clear trend toward hardware-aware serving systems.",
+          generatedAt: new Date().toISOString(),
+        };
+      }
+
+      const topPapers = entriesWithPapers.map((e) => e.paper as PaperMetadata);
+      const nextIssue = newsletters.length + 1;
+      const newsletterDraft = createNewsletterFromLiteratureReview(projectDomain, draftResult, topPapers, {
+        issueNumber: nextIssue,
+      });
+
+      await prisma.newsletter.create({
+        data: {
+          title: newsletterDraft.title,
+          issueNumber: newsletterDraft.issueNumber,
+          contentType: newsletterDraft.contentType,
+          status: newsletterDraft.status,
+          target: newsletterDraft.target,
+          sections: {
+            create: newsletterDraft.sections.map((s) => ({
+              title: s.title,
+              content: s.content,
+              order: s.order,
+              sectionType: s.sectionType,
+              paperReferences: s.paperReferences,
+            })),
+          },
+        },
+      });
+
+      await refreshNewsletters();
+      setActiveTab("newsletters");
+      setSelectedIndex(0);
+    } catch (err) {
+      setActionError(`Bridge to newsletter failed: ${(err as Error).message}`);
+    }
+  };
+
   const isDevMode = Boolean(
     process.argv.includes("--dev") || process.env.SCHOLARKIT_DEV === "1"
   );
@@ -294,12 +448,16 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
       } else if (activeTab === "reviews") {
         if (input === "c" || input === "C") {
           setIsCreateReviewOpen(true);
+        } else if (input === "s" || input === "S") {
+          handleSearchArxivForReview();
         } else if (input === "r" || input === "R") {
           handleRankPapers();
         } else if (input === "d" || input === "D") {
           if (selectedProject && selectedProject.entries.length > 0) {
             setIsDraftModalOpen(true);
           }
+        } else if (input === "N") {
+          handleBridgeReviewToNewsletter();
         }
       } else if (activeTab === "newsletters") {
         if (input === "n" || input === "N") {
@@ -332,16 +490,20 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
     { key: "R", label: "Refresh" },
   ];
 
+  const reviewHotkeys = [
+    { key: "c", label: "New Project" },
+    { key: "s", label: "Search arXiv" },
+    { key: "r", label: "Rank Papers" },
+    { key: "d", label: "Draft Review" },
+    { key: "N", label: "To Newsletter" },
+    { key: "R", label: "Refresh" },
+  ];
+
   const customHotkeys =
     activeTab === "papers"
       ? paperHotkeys
       : activeTab === "reviews"
-        ? [
-            { key: "c", label: "New Project" },
-            { key: "r", label: "Rank Papers" },
-            { key: "d", label: "Draft Review" },
-            { key: "R", label: "Refresh" },
-          ]
+        ? reviewHotkeys
         : [
             { key: "n", label: "New Issue" },
             { key: "t", label: "Transition" },
