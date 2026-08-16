@@ -9,6 +9,7 @@ import {
   createMockLLMClient,
   PaperMetadata,
   LitReviewProject,
+  WorkflowAction,
   SCHOLARKIT_CONFIG,
 } from "@scholarkit/core";
 import { prisma } from "@scholarkit/db";
@@ -401,6 +402,98 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
     }
   };
 
+  const handleDirectTransition = async (action: WorkflowAction) => {
+    if (!selectedNewsletter) return;
+
+    try {
+      setActionError(null);
+      const { transitionReviewStatus } = await import("@scholarkit/core");
+      const nextStatus = transitionReviewStatus(selectedNewsletter.status as any, action);
+
+      await prisma.newsletter.update({
+        where: { id: selectedNewsletter.id },
+        data: {
+          status: nextStatus,
+          scheduledAt: nextStatus === "scheduled" ? new Date(Date.now() + 3600000) : selectedNewsletter.scheduledAt,
+          sentAt: nextStatus === "sent" ? new Date() : selectedNewsletter.sentAt,
+        },
+      });
+
+      await refreshNewsletters();
+    } catch (err) {
+      setActionError(`Transition failed: ${(err as Error).message}`);
+    }
+  };
+
+  const handleRunSchedulerWorker = async () => {
+    try {
+      setActionError(null);
+      const { evaluateScheduledQueue, formatNewsletterForTelegramHtml, chunkTelegramMessage, sendTelegramChunks } = await import("@scholarkit/core");
+
+      const scheduledNewsletters = await prisma.newsletter.findMany({
+        where: { status: "scheduled" },
+        include: { sections: { orderBy: { order: "asc" } } },
+      });
+
+      const { due } = evaluateScheduledQueue(scheduledNewsletters, new Date());
+      if (due.length === 0) {
+        setActionError("No due scheduled newsletters in queue.");
+        return;
+      }
+
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      const targetChatId = process.env.TELEGRAM_CHAT_ID;
+
+      if (!botToken || botToken.includes("123456789") || !targetChatId) {
+        setActionError("Valid TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID required in .env to dispatch.");
+        return;
+      }
+
+      for (const nl of due) {
+        await prisma.newsletter.update({
+          where: { id: nl.id },
+          data: { status: "sending" },
+        });
+
+        const html = formatNewsletterForTelegramHtml({
+          title: nl.title,
+          issueNumber: nl.issueNumber || undefined,
+          contentType: nl.contentType,
+          status: "sending",
+          target: nl.target,
+          sections: nl.sections.map((s) => ({
+            title: s.title,
+            content: s.content,
+            order: s.order,
+            sectionType: s.sectionType as any,
+            paperReferences: s.paperReferences,
+          })),
+        });
+
+        const chunks = chunkTelegramMessage(html, targetChatId, 4096);
+        await sendTelegramChunks(botToken, chunks, 1000);
+
+        await prisma.deliveryLog.create({
+          data: {
+            newsletterId: nl.id,
+            telegramChatId: targetChatId,
+            status: "sent",
+            sentAt: new Date(),
+          },
+        });
+
+        await prisma.newsletter.update({
+          where: { id: nl.id },
+          data: { status: "sent", sentAt: new Date() },
+        });
+      }
+
+      await refreshNewsletters();
+    } catch (err) {
+      setActionError(`Scheduler worker error: ${(err as Error).message}`);
+    }
+  };
+
   const isDevMode = Boolean(
     process.argv.includes("--dev") || process.env.SCHOLARKIT_DEV === "1"
   );
@@ -470,6 +563,20 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
           if (selectedNewsletter) {
             setIsTelegramPreviewOpen(true);
           }
+        } else if (input === "a" || input === "A") {
+          if (selectedNewsletter?.status === "in_review") {
+            handleDirectTransition("approve");
+          }
+        } else if (input === "c" || input === "C") {
+          if (selectedNewsletter?.status === "in_review") {
+            handleDirectTransition("request_changes");
+          }
+        } else if (input === "S") {
+          if (selectedNewsletter?.status === "approved") {
+            handleDirectTransition("schedule");
+          }
+        } else if (input === "w" || input === "W") {
+          handleRunSchedulerWorker();
         }
       }
     },
@@ -499,17 +606,27 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
     { key: "R", label: "Refresh" },
   ];
 
+  const newsletterHotkeys = [
+    { key: "n", label: "New Issue" },
+    { key: "t", label: "Transition" },
+    ...(selectedNewsletter?.status === "in_review"
+      ? [
+          { key: "a", label: "Approve" },
+          { key: "c", label: "Request Changes" },
+        ]
+      : []),
+    ...(selectedNewsletter?.status === "approved" ? [{ key: "S", label: "Schedule" }] : []),
+    ...(selectedNewsletter?.status === "scheduled" ? [{ key: "w", label: "Dispatch" }] : []),
+    { key: "p", label: "Telegram Preview" },
+    { key: "R", label: "Refresh" },
+  ];
+
   const customHotkeys =
     activeTab === "papers"
       ? paperHotkeys
       : activeTab === "reviews"
         ? reviewHotkeys
-        : [
-            { key: "n", label: "New Issue" },
-            { key: "t", label: "Transition" },
-            { key: "p", label: "Telegram Preview" },
-            { key: "R", label: "Refresh" },
-          ];
+        : newsletterHotkeys;
 
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0}>

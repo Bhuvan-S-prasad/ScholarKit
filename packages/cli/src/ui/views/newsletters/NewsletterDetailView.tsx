@@ -23,11 +23,25 @@ export const NewsletterDetailView: React.FC<NewsletterDetailViewProps> = ({ news
   const status = newsletter.status;
   const nextActions = getAvailableWorkflowActions(status as any);
 
-  // Full ReviewStatus reconciliation:
   // Main sequence: draft -> in_review -> approved -> scheduled -> sending -> sent
-  // Exceptions: changes_requested (from in_review), failed (from sending)
   const mainSequence = ["draft", "in_review", "approved", "scheduled", "sending", "sent"];
   const currentIdx = mainSequence.indexOf(status);
+
+  let contextualHint = "";
+  if (status === "draft") {
+    contextualHint = "Hint: Press [t] to advance status to 'in_review'.";
+  } else if (status === "in_review") {
+    contextualHint = "Editorial: Press [a] to approve this issue or [c] to request changes.";
+  } else if (status === "approved") {
+    contextualHint = "Publishing: Press [S] to schedule send, or [p] to preview Telegram HTML.";
+  } else if (status === "scheduled") {
+    const timeStr = newsletter.scheduledAt ? new Date(newsletter.scheduledAt).toLocaleString() : "Pending";
+    contextualHint = `Queued: Scheduled for ${timeStr}. Press [w] to dispatch worker now.`;
+  } else if (status === "changes_requested") {
+    contextualHint = "Editorial: Revisions requested. Revise content and press [t] to re-submit.";
+  } else if (status === "failed") {
+    contextualHint = "Delivery failed: Check Telegram token and press [t] to retry.";
+  }
 
   return (
     <Box flexDirection="column" gap={1}>
@@ -48,6 +62,14 @@ export const NewsletterDetailView: React.FC<NewsletterDetailViewProps> = ({ news
         <Text dimColor>Target: {newsletter.target}</Text>
         <Text dimColor>│</Text>
         <Text dimColor>Updated: {newsletter.updatedAt.toISOString().split("T")[0]}</Text>
+        {newsletter.scheduledAt && status === "scheduled" && (
+          <>
+            <Text dimColor>│</Text>
+            <Text color={isNoColor ? undefined : colors.primary}>
+              Scheduled: {new Date(newsletter.scheduledAt).toLocaleTimeString()}
+            </Text>
+          </>
+        )}
         {newsletter.sentAt && (
           <>
             <Text dimColor>│</Text>
@@ -105,6 +127,13 @@ export const NewsletterDetailView: React.FC<NewsletterDetailViewProps> = ({ news
         )}
       </Box>
 
+      {/* Contextual Action Guidance Banner */}
+      {contextualHint && (
+        <Box borderStyle="single" borderColor={isNoColor ? undefined : colors.borderFocused} paddingX={1}>
+          <Text color={isNoColor ? undefined : colors.primary}>{contextualHint}</Text>
+        </Box>
+      )}
+
       {/* 4. Sections Breakdown */}
       <Box flexDirection="column">
         <Text bold>Sections ({newsletter.sections.length}):</Text>
@@ -122,10 +151,14 @@ export const NewsletterDetailView: React.FC<NewsletterDetailViewProps> = ({ news
       </Box>
 
       {/* 5. Available Actions Bar */}
-      <Box marginTop={1} borderStyle="single" borderColor={isNoColor ? undefined : colors.primary} paddingX={1} justifyContent="space-between">
+      <Box marginTop={1} borderStyle="single" borderColor={isNoColor ? undefined : colors.primary} paddingX={1} justifyContent="space-between" flexWrap="wrap">
         <Box gap={1}>
           <Text bold color={isNoColor ? undefined : colors.primary}>Actions:</Text>
           <Text dimColor>[t] Transition ({nextActions.join(" | ") || "None"})</Text>
+          {status === "in_review" && <Text bold color={isNoColor ? undefined : colors.success}>│ [a] Approve</Text>}
+          {status === "in_review" && <Text bold color={isNoColor ? undefined : colors.warning}>│ [c] Changes</Text>}
+          {status === "approved" && <Text bold color={isNoColor ? undefined : colors.primary}>│ [S] Schedule</Text>}
+          {status === "scheduled" && <Text bold color={isNoColor ? undefined : colors.success}>│ [w] Dispatch</Text>}
         </Box>
         <Box gap={1}>
           <Text dimColor>[p] Preview HTML</Text>
