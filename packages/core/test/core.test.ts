@@ -6,6 +6,8 @@ import {
   // Operations
   parseArxivAtomFeed,
   normalizeArxivId,
+  buildArxivSearchUrl,
+  searchArxivPapers,
   createStubExtraction,
   evaluateExtractionConfidence,
   extractPaperData,
@@ -78,6 +80,48 @@ describe("ScholarKit Core", () => {
       expect(papers[0]?.authors).toEqual(["Alice Researcher", "Bob Scientist"]);
       expect(papers[0]?.sourceId).toBe("2312.12456v1");
       expect(papers[0]?.source).toBe("arxiv");
+    });
+
+    it("constructs valid arXiv search query URLs", () => {
+      const url = buildArxivSearchUrl("quantum computing error mitigation", 5);
+      expect(url).toContain("search_query=all:quantum%20computing%20error%20mitigation");
+      expect(url).toContain("max_results=5");
+      expect(url).toContain("sortBy=relevance");
+    });
+
+    it("fetches and parses multi-paper search results with injected fetch mock", async () => {
+      const mockMultiXml = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/2401.00001</id>
+    <title>Sparse Neural Networks</title>
+    <summary>First paper on sparsity.</summary>
+    <published>2024-01-01T00:00:00Z</published>
+    <author><name>Author A</name></author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2401.00002</id>
+    <title>Mixture of Experts Serving</title>
+    <summary>Second paper on MoE serving.</summary>
+    <published>2024-01-02T00:00:00Z</published>
+    <author><name>Author B</name></author>
+  </entry>
+</feed>`;
+
+      const mockFetch: typeof fetch = async (input: RequestInfo | URL) => {
+        return new Response(mockMultiXml, { status: 200, statusText: "OK" });
+      };
+
+      const results = await searchArxivPapers("sparse networks", {
+        maxResults: 2,
+        fetchFn: mockFetch,
+      });
+
+      expect(results.length).toBe(2);
+      expect(results[0]?.sourceId).toBe("2401.00001");
+      expect(results[0]?.title).toBe("Sparse Neural Networks");
+      expect(results[1]?.sourceId).toBe("2401.00002");
+      expect(results[1]?.title).toBe("Mixture of Experts Serving");
     });
   });
 
