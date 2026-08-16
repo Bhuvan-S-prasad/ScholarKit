@@ -511,137 +511,154 @@ export function createReviewCommand(): Command {
     });
 
   // --------------------------------------------------------------------------
-  // 6. Bridge: Convert Literature Review Draft to Newsletter Issue
+  // 6. Bridge Literature Review to Research Briefing
   // --------------------------------------------------------------------------
+  const bridgeAction = async (
+    projectId: string,
+    options: { issue?: string; target?: string }
+  ) => {
+    try {
+      const project = await prisma.litReviewProject.findUnique({
+        where: { id: projectId },
+        include: {
+          entries: {
+            orderBy: { relevanceScore: "desc" },
+            include: { paper: true },
+          },
+        },
+      });
+
+      if (!project) {
+        error(`Project "${projectId}" not found.`);
+        process.exitCode = 1;
+        return;
+      }
+
+      if (project.entries.length === 0) {
+        warn(`Project "${project.title}" has no ranked papers. Run 'scholarkit review search ${project.id}' first.`);
+        return;
+      }
+
+      banner("Review to Research Briefing Synthesis Bridge", project.title);
+      info("Synthesizing literature review draft for briefing conversion...");
+
+      const projectDomain: LitReviewProject = {
+        id: project.id,
+        title: project.title,
+        description: project.description || undefined,
+        query: project.query,
+        inclusionCriteria: project.inclusionCriteria,
+        exclusionCriteria: project.exclusionCriteria,
+        status: project.status as "active" | "completed" | "archived",
+      };
+
+      const entriesWithPapers = project.entries.map((e) => ({
+        entry: {
+          id: e.id,
+          projectId: e.projectId,
+          paperId: e.paperId,
+          relevanceScore: e.relevanceScore,
+          classification: e.classification as any,
+          reasonForScore: e.reasonForScore,
+          notes: e.notes || undefined,
+          createdAt: e.createdAt.toISOString(),
+        },
+        paper: {
+          id: e.paper.id,
+          title: e.paper.title,
+          authors: e.paper.authors,
+          abstract: e.paper.abstract,
+          publishedDate: e.paper.publishedDate,
+          source: e.paper.source as any,
+          sourceId: e.paper.sourceId,
+          url: e.paper.url,
+          pdfUrl: e.paper.pdfUrl || undefined,
+          categories: e.paper.categories,
+          status: e.paper.status as any,
+          rawContent: e.paper.rawContent || undefined,
+          createdAt: e.paper.createdAt.toISOString(),
+          updatedAt: e.paper.updatedAt.toISOString(),
+        },
+      }));
+
+      const apiKey = process.env.OPENROUTER_API_KEY;
+      const selectedModel = process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
+
+      let draftResult;
+      if (apiKey) {
+        const llm = createOpenRouterClient({ apiKey, defaultModel: selectedModel });
+        draftResult = await buildLiteratureReviewDraft(projectDomain, entriesWithPapers, llm);
+      } else {
+        draftResult = {
+          title: `Literature Review: ${project.title}`,
+          abstractOrExecutiveSummary: `Synthesis of key contributions across ${entriesWithPapers.length} analyzed works on ${project.query}.`,
+          sections: [
+            {
+              title: "Architectural & Methodological Highlights",
+              content: "Recent research emphasizes compute optimization and sparse execution to maximize throughput.",
+              citedPaperIds: entriesWithPapers.map((e) => e.paper.sourceId),
+            },
+          ],
+          researchGapsIdentified: [
+            "Standardized benchmark evaluations across heterogeneous infrastructure",
+          ],
+          conclusion: "The literature demonstrates a clear trend toward hardware-aware serving systems.",
+          generatedAt: new Date().toISOString(),
+        };
+      }
+
+      // Bridge to Briefing
+      const { createBriefingFromLiteratureReview } = await import("@scholarkit/core");
+      const topPapers = entriesWithPapers.map((e) => e.paper);
+      const count = await prisma.briefing.count();
+      const issueNumber = options.issue ? parseInt(options.issue, 10) : count + 1;
+      const briefingDraft = createBriefingFromLiteratureReview(projectDomain, draftResult, topPapers as any, {
+        issueNumber,
+        target: options.target as any,
+      });
+
+      // Persist in Neon DB
+      const createdBriefing = await prisma.briefing.create({
+        data: {
+          title: briefingDraft.title,
+          issueNumber: briefingDraft.issueNumber,
+          contentType: briefingDraft.contentType,
+          status: briefingDraft.status,
+          target: briefingDraft.target,
+          sections: {
+            create: briefingDraft.sections.map((s) => ({
+              title: s.title,
+              content: s.content,
+              order: s.order,
+              sectionType: s.sectionType,
+              paperReferences: s.paperReferences,
+            })),
+          },
+        },
+        include: { sections: true },
+      });
+
+      success(`Research Briefing created: #${createdBriefing.issueNumber || "—"} "${createdBriefing.title}" [${createdBriefing.id}]`);
+      info(`Created ${createdBriefing.sections.length} sections. Advance workflow with 'scholarkit briefing transition ${createdBriefing.id} submit_for_review'.`);
+    } catch (err) {
+      error(`Failed to bridge review to briefing: ${(err as Error).message}`);
+      process.exitCode = 1;
+    }
+  };
+
+  reviewCmd
+    .command("to-briefing <projectId>")
+    .description("Generate a Research Briefing draft issue from a synthesized Literature Review")
+    .option("-i, --issue <number>", "Explicit issue number")
+    .option("-t, --target <target>", "Target: telegram_channel | telegram_dm", "telegram_channel")
+    .action(bridgeAction);
+
   reviewCmd
     .command("to-newsletter <projectId>")
-    .description("Generate a Newsletter Draft issue from a synthesized Literature Review")
-    .option("-i, --issue <number>", "Optional newsletter issue number")
-    .option("-t, --target <target>", "Target channel: telegram_channel | telegram_group | telegram_dm", "telegram_channel")
-    .action(async (projectId: string, options: { issue?: string; target: string }) => {
-      try {
-        const { createNewsletterFromLiteratureReview } = await import("@scholarkit/core");
-
-        const project = await prisma.litReviewProject.findUnique({
-          where: { id: projectId },
-          include: { entries: { include: { paper: true } } },
-        });
-
-        if (!project) {
-          error(`Project "${projectId}" not found.`);
-          process.exitCode = 1;
-          return;
-        }
-
-        if (project.entries.length === 0) {
-          warn(`Project "${project.title}" has no ranked papers. Run 'scholarkit review search ${project.id}' first.`);
-          return;
-        }
-
-        banner("Review to Newsletter Synthesis Bridge", project.title);
-        info("Synthesizing literature review draft for newsletter conversion...");
-
-        const projectDomain: LitReviewProject = {
-          id: project.id,
-          title: project.title,
-          description: project.description || undefined,
-          query: project.query,
-          inclusionCriteria: project.inclusionCriteria,
-          exclusionCriteria: project.exclusionCriteria,
-          status: project.status as "active" | "completed" | "archived",
-        };
-
-        const entriesWithPapers = project.entries.map((e) => ({
-          entry: {
-            id: e.id,
-            projectId: e.projectId,
-            paperId: e.paperId,
-            relevanceScore: e.relevanceScore,
-            classification: e.classification as any,
-            reasonForScore: e.reasonForScore,
-            notes: e.notes || undefined,
-            createdAt: e.createdAt.toISOString(),
-          },
-          paper: {
-            id: e.paper.id,
-            title: e.paper.title,
-            authors: e.paper.authors,
-            abstract: e.paper.abstract,
-            publishedDate: e.paper.publishedDate,
-            source: e.paper.source as any,
-            sourceId: e.paper.sourceId,
-            url: e.paper.url,
-            pdfUrl: e.paper.pdfUrl || undefined,
-            categories: e.paper.categories,
-            status: e.paper.status as any,
-            rawContent: e.paper.rawContent || undefined,
-            createdAt: e.paper.createdAt.toISOString(),
-            updatedAt: e.paper.updatedAt.toISOString(),
-          },
-        }));
-
-        const apiKey = process.env.OPENROUTER_API_KEY;
-        const selectedModel = process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
-
-        let draftResult;
-        if (apiKey) {
-          const llm = createOpenRouterClient({ apiKey, defaultModel: selectedModel });
-          draftResult = await buildLiteratureReviewDraft(projectDomain, entriesWithPapers, llm);
-        } else {
-          draftResult = {
-            title: `Literature Review: ${project.title}`,
-            abstractOrExecutiveSummary: `Synthesis of key contributions across ${entriesWithPapers.length} analyzed works on ${project.query}.`,
-            sections: [
-              {
-                title: "Architectural & Methodological Highlights",
-                content: "Recent research emphasizes compute optimization and sparse execution to maximize throughput.",
-                citedPaperIds: entriesWithPapers.map((e) => e.paper.sourceId),
-              },
-            ],
-            researchGapsIdentified: [
-              "Standardized benchmark evaluations across heterogeneous infrastructure",
-            ],
-            conclusion: "The literature demonstrates a clear trend toward hardware-aware serving systems.",
-            generatedAt: new Date().toISOString(),
-          };
-        }
-
-        // Bridge to Newsletter
-        const topPapers = entriesWithPapers.map((e) => e.paper);
-        const issueNumber = options.issue ? parseInt(options.issue, 10) : undefined;
-        const newsletterDraft = createNewsletterFromLiteratureReview(projectDomain, draftResult, topPapers, {
-          issueNumber,
-          target: options.target as any,
-        });
-
-        // Persist in Neon DB
-        const createdNewsletter = await prisma.newsletter.create({
-          data: {
-            title: newsletterDraft.title,
-            issueNumber: newsletterDraft.issueNumber,
-            contentType: newsletterDraft.contentType,
-            status: newsletterDraft.status,
-            target: newsletterDraft.target,
-            sections: {
-              create: newsletterDraft.sections.map((s) => ({
-                title: s.title,
-                content: s.content,
-                order: s.order,
-                sectionType: s.sectionType,
-                paperReferences: s.paperReferences,
-              })),
-            },
-          },
-          include: { sections: true },
-        });
-
-        success(`Newsletter Issue created: #${createdNewsletter.issueNumber || "—"} "${createdNewsletter.title}" [${createdNewsletter.id}]`);
-        info(`Created ${createdNewsletter.sections.length} sections. Advance workflow with 'scholarkit newsletter transition ${createdNewsletter.id} submit_for_review'.`);
-      } catch (err) {
-        error(`Failed to bridge review to newsletter: ${(err as Error).message}`);
-        process.exitCode = 1;
-      }
-    });
+    .description("Legacy alias for 'to-briefing'")
+    .option("-i, --issue <number>", "Explicit issue number")
+    .option("-t, --target <target>", "Target: telegram_channel | telegram_dm", "telegram_channel")
+    .action(bridgeAction);
 
   return reviewCmd;
 }

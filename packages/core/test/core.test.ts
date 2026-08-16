@@ -16,6 +16,10 @@ import {
   transitionReviewStatus,
   InvalidWorkflowTransitionError,
   chunkTelegramMessage,
+  createBriefingDraft,
+  createBriefingFromLiteratureReview,
+  createBriefingFromRecentPapers,
+  formatBriefingForTelegramHtml,
   createNewsletterDraft,
   createNewsletterFromLiteratureReview,
   createNewsletterFromRecentPapers,
@@ -331,31 +335,31 @@ describe("ScholarKit Core", () => {
         conclusion: "Promising efficiency improvements observed.",
       };
 
-      const newsletter = createNewsletterFromLiteratureReview(project, draft, [samplePaper], {
+      const briefing = createBriefingFromLiteratureReview(project, draft, [samplePaper], {
         issueNumber: 1,
       });
 
-      expect(newsletter.title).toContain("Sparse Activation Networks");
-      expect(newsletter.issueNumber).toBe(1);
-      expect(newsletter.status).toBe("draft");
-      expect(newsletter.sections.length).toBe(4); // intro + deep_dive + quick_takes + outro
-      expect(newsletter.sections[0]?.sectionType).toBe("intro");
-      expect(newsletter.sections[1]?.title).toBe("Kernel Acceleration");
-      expect(newsletter.sections[2]?.sectionType).toBe("quick_takes");
-      expect(newsletter.sections[3]?.sectionType).toBe("outro");
+      expect(briefing.title).toContain("Sparse Activation Networks");
+      expect(briefing.issueNumber).toBe(1);
+      expect(briefing.status).toBe("draft");
+      expect(briefing.sections.length).toBe(4); // intro + deep_dive + quick_takes + outro
+      expect(briefing.sections[0]?.sectionType).toBe("intro");
+      expect(briefing.sections[1]?.title).toBe("Kernel Acceleration");
+      expect(briefing.sections[2]?.sectionType).toBe("quick_takes");
+      expect(briefing.sections[3]?.sectionType).toBe("outro");
     });
 
-    it("synthesizes a structured Newsletter digest from Recent Ingested Papers", () => {
-      const newsletter = createNewsletterFromRecentPapers([samplePaper], {
+    it("synthesizes a structured Research Briefing roundup from Recent Ingested Papers", () => {
+      const briefing = createBriefingFromRecentPapers([samplePaper], {
         issueNumber: 2,
-        title: "Weekly AI Digest #2",
+        title: "ScholarKit Research Briefing: Issue 2",
       });
 
-      expect(newsletter.title).toBe("Weekly AI Digest #2");
-      expect(newsletter.issueNumber).toBe(2);
-      expect(newsletter.sections.length).toBe(3); // intro + paper summary + outro
-      expect(newsletter.sections[1]?.title).toBe(samplePaper.title);
-      expect(newsletter.sections[1]?.paperReferences).toEqual(["2401.55555"]);
+      expect(briefing.title).toBe("ScholarKit Research Briefing: Issue 2");
+      expect(briefing.issueNumber).toBe(2);
+      expect(briefing.sections.length).toBe(3); // intro + paper summary + outro
+      expect(briefing.sections[1]?.title).toBe(samplePaper.title);
+      expect(briefing.sections[1]?.paperReferences).toEqual(["2401.55555"]);
     });
 
     it("evaluates scheduled queue and checks due delivery status correctly", () => {

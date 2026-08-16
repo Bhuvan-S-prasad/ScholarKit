@@ -8,6 +8,7 @@ export * from "./operations/extraction.js";
 export * from "./operations/analysis.js";
 export * from "./operations/literature.js";
 export * from "./operations/workflow.js";
+export * from "./operations/briefing.js";
 export * from "./operations/newsletter.js";
 export * from "./operations/publish/telegram.js";
 export * from "./operations/subscribers.js";

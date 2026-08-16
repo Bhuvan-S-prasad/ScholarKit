@@ -19,6 +19,8 @@ export type PaperStatus = z.infer<typeof PaperStatusSchema>;
 export const ContentTypeSchema = z.enum([
   "paper_note",
   "literature_review",
+  "research_briefing",
+  "briefing",
   "newsletter",
   "digest",
 ]);
@@ -316,25 +318,32 @@ export const WorkflowActionSchema = z.enum([
 ]);
 export type WorkflowAction = z.infer<typeof WorkflowActionSchema>;
 
-export const NewsletterSectionSchema = z.object({
+export const BriefingSectionTypeSchema = z.enum([
+  "intro",
+  "deep_dive",
+  "quick_takes",
+  "outro",
+  "custom",
+]);
+export type BriefingSectionType = z.infer<typeof BriefingSectionTypeSchema>;
+
+export const BriefingSectionSchema = z.object({
   id: z.string().optional(),
   title: z.string().min(1, "Section title is required"),
   content: z.string().min(1, "Section content is required"),
   order: z.number().int().nonnegative(),
   paperReferences: z.array(z.string()).default([]),
-  sectionType: z
-    .enum(["intro", "deep_dive", "quick_takes", "outro", "custom"])
-    .default("custom"),
+  sectionType: BriefingSectionTypeSchema.default("custom"),
 });
-export type NewsletterSection = z.infer<typeof NewsletterSectionSchema>;
+export type BriefingSection = z.infer<typeof BriefingSectionSchema>;
 
-export const NewsletterSchema = z.object({
+export const BriefingSchema = z.object({
   id: z.string().optional(),
-  title: z.string().min(1, "Newsletter title is required"),
+  title: z.string().min(1, "Briefing title is required"),
   issueNumber: z.number().int().positive().optional(),
-  contentType: ContentTypeSchema.default("newsletter"),
+  contentType: ContentTypeSchema.default("research_briefing"),
   status: ReviewStatusSchema.default("draft"),
-  sections: z.array(NewsletterSectionSchema).default([]),
+  sections: z.array(BriefingSectionSchema).default([]),
   scheduledAt: z.string().datetime().nullable().optional(),
   sentAt: z.string().datetime().nullable().optional(),
   target: DeliveryTargetSchema.default("telegram_channel"),
@@ -342,11 +351,18 @@ export const NewsletterSchema = z.object({
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
 });
-export type Newsletter = z.infer<typeof NewsletterSchema>;
+export type Briefing = z.infer<typeof BriefingSchema>;
+
+// Backwards-compatible aliases
+export const NewsletterSectionSchema = BriefingSectionSchema;
+export type NewsletterSection = BriefingSection;
+export const NewsletterSchema = BriefingSchema;
+export type Newsletter = Briefing;
 
 export const PersonalizedDigestSchema = z.object({
   subscriberId: z.string(),
-  newsletterId: z.string(),
+  briefingId: z.string().optional(),
+  newsletterId: z.string().optional(),
   personalizedContent: z.string(),
   target: DeliveryTargetSchema,
 });

@@ -30,6 +30,8 @@ enum PaperStatus {
 enum ContentType {
   paper_note
   literature_review
+  research_briefing
+  briefing
   newsletter
   digest
 }
@@ -137,14 +139,14 @@ model LitReviewEntry {
 }
 
 // ============================================================================
-// Newsletter & Workflow Domain Models
+// Research Briefing & Workflow Domain Models
 // ============================================================================
 
-model Newsletter {
+model Briefing {
   id          String         @id @default(cuid())
   title       String
   issueNumber Int?
-  contentType ContentType    @default(newsletter)
+  contentType ContentType    @default(research_briefing)
   status      ReviewStatus   @default(draft)
   scheduledAt DateTime?
   sentAt      DateTime?
@@ -153,25 +155,27 @@ model Newsletter {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
-  sections     NewsletterSection[]
+  sections     BriefingSection[]
   deliveryLogs DeliveryLog[]
 
+  @@map("briefings")
   @@index([status])
 }
 
-model NewsletterSection {
-  id              String     @id @default(cuid())
-  newsletterId    String
-  newsletter      Newsletter @relation(fields: [newsletterId], references: [id], onDelete: Cascade)
+model BriefingSection {
+  id              String   @id @default(cuid())
+  briefingId      String
+  briefing        Briefing @relation(fields: [briefingId], references: [id], onDelete: Cascade)
   title           String
-  content         String     @db.Text
+  content         String   @db.Text
   order           Int
-  paperReferences String[]   @default([])
-  sectionType     String     @default("custom")
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  paperReferences String[] @default([])
+  sectionType     String   @default("custom")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  @@index([newsletterId, order])
+  @@map("briefing_sections")
+  @@index([briefingId, order])
 }
 
 // ============================================================================
@@ -194,8 +198,8 @@ model Subscriber {
 
 model DeliveryLog {
   id             String      @id @default(cuid())
-  newsletterId   String
-  newsletter     Newsletter  @relation(fields: [newsletterId], references: [id], onDelete: Cascade)
+  briefingId     String
+  briefing       Briefing    @relation(fields: [briefingId], references: [id], onDelete: Cascade)
   subscriberId   String?
   subscriber     Subscriber? @relation(fields: [subscriberId], references: [id], onDelete: SetNull)
   telegramChatId String
@@ -204,7 +208,7 @@ model DeliveryLog {
   sentAt         DateTime?
   createdAt      DateTime    @default(now())
 
-  @@index([newsletterId])
+  @@index([briefingId])
   @@index([subscriberId])
   @@index([status])
 }

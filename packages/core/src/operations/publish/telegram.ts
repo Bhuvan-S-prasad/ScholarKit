@@ -1,4 +1,4 @@
-import { TelegramMessageChunk, TelegramMessageChunkSchema, Newsletter } from "../../schemas.js";
+import { TelegramMessageChunk, TelegramMessageChunkSchema, Briefing, Newsletter } from "../../schemas.js";
 
 /**
  * Splits text into chunks strictly under the Telegram 4096-character limit.
@@ -64,18 +64,18 @@ export function chunkTelegramMessage(
 }
 
 /**
- * Formats a full Newsletter object into Telegram-compatible text (HTML format).
+ * Formats a full Briefing/Newsletter object into Telegram-compatible text (HTML format).
  */
-export function formatNewsletterForTelegramHtml(newsletter: Newsletter): string {
+export function formatBriefingForTelegramHtml(briefing: Briefing | Newsletter): string {
   const parts: string[] = [];
 
-  parts.push(`<b>📰 ${newsletter.title}</b>`);
-  if (newsletter.issueNumber) {
-    parts.push(`<i>Issue #${newsletter.issueNumber}</i>`);
+  parts.push(`<b>🔬 ${briefing.title}</b>`);
+  if (briefing.issueNumber) {
+    parts.push(`<i>Briefing Edition #${briefing.issueNumber}</i>`);
   }
   parts.push("");
 
-  for (const section of newsletter.sections) {
+  for (const section of briefing.sections) {
     parts.push(`<b>▶ ${section.title}</b>`);
     parts.push(section.content);
     if (section.paperReferences && section.paperReferences.length > 0) {
@@ -86,6 +86,9 @@ export function formatNewsletterForTelegramHtml(newsletter: Newsletter): string 
 
   return parts.join("\n").trim();
 }
+
+// Backwards-compatible alias
+export const formatNewsletterForTelegramHtml = formatBriefingForTelegramHtml;
 
 /**
  * Sends a single TelegramMessageChunk via Telegram Bot API sendMessage.

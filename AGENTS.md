@@ -14,7 +14,7 @@ Three functional pillars, all built on the same core:
 
 1. **Research Paper Analyzer** — ingest papers → extract methodology/results → compare → identify limitations → generate literature notes
 2. **Literature Review Manager** — search → deduplicate → classify → rank relevance → summarize → build a literature review
-3. **Newsletter Operator** — generate → personalize → review → schedule → send → track, delivered via Telegram only
+3. **Research Briefing Operator** — generate → personalize → review → schedule → send → track, delivered via Telegram only
 
 Pillars 1–2 are the **content engine**. Pillar 3 is the **delivery layer** that packages output from 1–2 (or general research digests) into something sendable.
 
@@ -117,7 +117,7 @@ Keep new files inside this structure. If something doesn't obviously fit, flag i
 ```ts
 PaperSource = "arxiv" | "doi" | "pdf_upload" | "url";
 PaperStatus = "ingested" | "extracting" | "extracted" | "analyzed" | "archived";
-ContentType = "paper_note" | "literature_review" | "newsletter" | "digest";
+ContentType = "paper_note" | "literature_review" | "research_briefing" | "briefing" | "newsletter" | "digest";
 ReviewStatus =
   "draft" |
   "in_review" |
@@ -130,9 +130,9 @@ ReviewStatus =
 DeliveryTarget = "telegram_dm" | "telegram_channel" | "telegram_group";
 ```
 
-**Prisma models:** `Paper`, `PaperExtraction`, `LitReviewProject`, `LitReviewEntry`, `Newsletter`, `NewsletterSection`, `Subscriber`, `DeliveryLog`
+**Prisma models:** `Paper`, `PaperExtraction`, `LitReviewProject`, `LitReviewEntry`, `Briefing`, `BriefingSection`, `Subscriber`, `DeliveryLog`
 
-**State machine (newsletters/digests only):**
+**State machine (briefings/digests only):**
 
 ```
 draft ──submit──▶ in_review ──approve──▶ approved ──schedule──▶ scheduled ──(worker fires)──▶ sending ──▶ sent
@@ -149,7 +149,7 @@ draft ──submit──▶ in_review ──approve──▶ approved ──sche
 - **Telegram bots can't DM a user until that user has `/start`ed the bot.** The subscriber "connect" flow is the webhook capturing `chat_id` on `/start`, not an OAuth redirect. There is no consent screen to build.
 - **Neon connection limits:** always use the **pooled** connection string (`?pgbouncer=true`) for the Prisma client used at runtime (`packages/db/src/client.ts`). Use the **direct** connection string only for `prisma migrate`. Getting this backwards exhausts Neon's connection limit fast, especially from short-lived CLI invocations.
 - **PDF text extraction happens locally, before anything reaches the LLM.** Use a parsing library, not the model, to pull raw text out of a PDF. Very long papers may need chunking before extraction — don't assume a whole paper fits in one prompt.
-- **LLM extraction confidence is not decoration.** `PaperExtractionSchema.confidence` should drive behavior — low confidence should flag the extraction for human review rather than being silently treated as fact downstream (e.g. in a generated literature review or newsletter section).
+- **LLM extraction confidence is not decoration.** `PaperExtractionSchema.confidence` should drive behavior — low confidence should flag the extraction for human review rather than being silently treated as fact downstream (e.g. in a generated literature review or briefing section).
 - **Don't add per-platform OAuth.** This project deliberately has one delivery target and one bot token. If a request implies adding Slack/email/another platform, that's a different project (the content-publishing-hub pattern), not this one.
 - **Don't point the app's runtime `DATABASE_URL` at the Docker Compose Postgres.** That container exists for tests and the Prisma shadow DB only — it's ephemeral and has no real data. Dev/prod always use a Neon connection string. See §6a.
 
@@ -189,23 +189,23 @@ Work through each phase sequentially — each phase completes an entire adapter 
   - `scholarkit review search <project-id>` — search arXiv for project query, deduplicate, auto-ingest, and rank.
   - `scholarkit review rank <project-id>` — classify (4 tiers) and rank ingested papers against project criteria with LLM.
   - `scholarkit review draft <project-id>` — generate structured literature review draft.
-  - `scholarkit review to-newsletter <project-id>` — bridge synthesized review into a structured newsletter issue draft.
-- [x] **Newsletter & Telegram Publishing**:
-  - `scholarkit newsletter draft <title>` — create newsletter draft from recent papers or reviews.
-  - `scholarkit newsletter transition <id> <action>` — advance review state machine (`submit`, `approve`, `schedule`).
-  - `scholarkit newsletter schedule <id> [time]` — schedule approved issues for future delivery.
-  - `scholarkit newsletter worker [--run-once]` — cron-friendly queue worker to dispatch due scheduled sends to Telegram.
-  - `scholarkit newsletter preview <id>` — chunk analysis and formatting.
-  - `scholarkit newsletter send <id>` — send digest to Telegram with rate pacing and 4096-char chunking.
+  - `scholarkit review to-briefing <project-id>` — bridge synthesized review into a structured research briefing issue draft.
+- [x] **Research Briefing & Telegram Publishing**:
+  - `scholarkit briefing draft <title>` — create research briefing draft from recent papers or reviews.
+  - `scholarkit briefing transition <id> <action>` — advance review state machine (`submit`, `approve`, `schedule`).
+  - `scholarkit briefing schedule <id> [time]` — schedule approved issues for future delivery.
+  - `scholarkit briefing worker [--run-once]` — cron-friendly queue worker to dispatch due scheduled sends to Telegram.
+  - `scholarkit briefing preview <id>` — chunk analysis and formatting.
+  - `scholarkit briefing send <id>` — send digest to Telegram with rate pacing and 4096-char chunking.
 - [x] **Interactive Dashboard (TUI)**:
-  - `scholarkit tui [--dev]` — dual-pane master-detail dashboard with debounced filtering (`/`), full keyboard navigation, arXiv ingestion modal (`[i]`), live extraction (`[e]`), review project auto-search prompt, on-demand search (`[s]`), review ranking (`[r]`), draft synthesis (`[d]`), review-to-newsletter bridge (`[N]`), contextual workflow hints, editorial approvals (`[a]`/`[c]`), schedule triggers (`[S]`), worker dispatcher (`[w]`), newsletter state machine (`[t]`), and Telegram preview (`[p]`).
+  - `scholarkit tui [--dev]` — dual-pane master-detail dashboard with debounced filtering (`/`), full keyboard navigation, arXiv ingestion modal (`[i]`), live extraction (`[e]`), review project auto-search prompt, on-demand search (`[s]`), review ranking (`[r]`), draft synthesis (`[d]`), review-to-briefing bridge (`[N]`), contextual workflow hints, editorial approvals (`[a]`/`[c]`), schedule triggers (`[S]`), worker dispatcher (`[w]`), briefing state machine (`[t]`), and Telegram preview (`[p]`).
 
 ### Phase 2: Local MCP Server (`packages/local-mcp`)
 Expose all validated core domain operations as agent tools over stdio:
 - [ ] Stdio MCP Server setup using `@modelcontextprotocol/sdk`.
 - [ ] Register Paper Tools (`ingest_paper`, `extract_paper`, `analyze_papers`).
-- [ ] Register Literature Review Tools (`create_review_project`, `search_arxiv_papers`, `rank_papers`, `draft_literature_review`, `bridge_review_to_newsletter`).
-- [ ] Register Newsletter & Workflow Tools (`draft_newsletter`, `transition_newsletter_status`, `schedule_newsletter`, `dispatch_scheduled_newsletters`, `send_newsletter`).
+- [ ] Register Literature Review Tools (`create_review_project`, `search_arxiv_papers`, `rank_papers`, `draft_literature_review`, `bridge_review_to_briefing`).
+- [ ] Register Briefing & Workflow Tools (`draft_briefing`, `transition_briefing_status`, `schedule_briefing`, `dispatch_scheduled_briefings`, `send_briefing`).
 - [ ] Connect and test with local IDE / Claude Desktop / Antigravity via `mcp.json`.
 
 ### Phase 3: Remote MCP Server (`apps/remote-mcp`)

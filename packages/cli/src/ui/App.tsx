@@ -19,7 +19,6 @@ import { Header } from "./components/layout/Header.js";
 import { TabBar } from "./components/layout/TabBar.js";
 import { Footer } from "./components/layout/Footer.js";
 import { FocusedPanel } from "./components/layout/FocusedPanel.js";
-import { TextStatusBadge } from "./components/common/TextStatusBadge.js";
 import { StatusSpinner } from "./components/common/StatusSpinner.js";
 import { PaperListView } from "./views/papers/PaperListView.js";
 import { PaperDetailView } from "./views/papers/PaperDetailView.js";
@@ -28,32 +27,34 @@ import { ReviewListView } from "./views/reviews/ReviewListView.js";
 import { ReviewDetailView } from "./views/reviews/ReviewDetailView.js";
 import { CreateReviewModal } from "./views/reviews/CreateReviewModal.js";
 import { ReviewDraftModal } from "./views/reviews/ReviewDraftModal.js";
-import { NewsletterListView } from "./views/newsletters/NewsletterListView.js";
-import { NewsletterDetailView } from "./views/newsletters/NewsletterDetailView.js";
-import { TransitionDialog } from "./views/newsletters/TransitionDialog.js";
-import { TelegramPreviewModal } from "./views/newsletters/TelegramPreviewModal.js";
-import { CreateNewsletterModal } from "./views/newsletters/CreateNewsletterModal.js";
+import { BriefingListView } from "./views/briefings/BriefingListView.js";
+import { BriefingDetailView } from "./views/briefings/BriefingDetailView.js";
+import { TransitionDialog } from "./views/briefings/TransitionDialog.js";
+import { TelegramPreviewModal } from "./views/briefings/TelegramPreviewModal.js";
+import { CreateBriefingModal } from "./views/briefings/CreateBriefingModal.js";
 
-export type TabId = "papers" | "reviews" | "newsletters";
+export type TabId = "papers" | "reviews" | "briefings";
 
 export interface AppProps {
-  initialTab?: TabId;
+  initialTab?: TabId | "newsletters";
 }
 
-const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
+const MainView: React.FC<{ initialTab: TabId | "newsletters" }> = ({ initialTab }) => {
   const { exit } = useApp();
   const {
     papers,
     projects,
-    newsletters,
+    briefings,
     loading,
     error,
     refreshAll,
     refreshPapers,
     refreshProjects,
-    refreshNewsletters,
+    refreshBriefings,
   } = useAppState();
-  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
+
+  const normalizedTab: TabId = (initialTab === "newsletters" ? "briefings" : initialTab) || "papers";
+  const [activeTab, setActiveTab] = useState<TabId>(normalizedTab);
   const [activePane, setActivePane] = useState<"left" | "right">("left");
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
 
@@ -68,80 +69,86 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
   const [isRanking, setIsRanking] = useState<boolean>(false);
   const [rankingProgress, setRankingProgress] = useState<string>("");
 
-  // Newsletter modals & action states
-  const [isCreateNewsletterOpen, setIsCreateNewsletterOpen] = useState<boolean>(false);
+  // Briefing modals & workflow action states
+  const [isCreateBriefingOpen, setIsCreateBriefingOpen] = useState<boolean>(false);
   const [isTransitionOpen, setIsTransitionOpen] = useState<boolean>(false);
   const [isTelegramPreviewOpen, setIsTelegramPreviewOpen] = useState<boolean>(false);
 
-  // Action error state
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // Selected entities based on active tab and index
   const selectedPaper = papers[selectedIndex] || null;
   const selectedProject = projects[selectedIndex] || null;
-  const selectedNewsletter = newsletters[selectedIndex] || null;
+  const selectedBriefing = briefings[selectedIndex] || null;
 
-  // Extraction handler
-  const handleExtractPaper = async (useStub: boolean) => {
-    if (!selectedPaper || isExtracting) return;
-    setIsExtracting(true);
-    setActionError(null);
+  // Actions
+  const handleExtractPaper = async (useStub = false) => {
+    if (!selectedPaper) return;
 
     try {
-      const paperMeta: PaperMetadata = {
+      setIsExtracting(true);
+      setActionError(null);
+      setExtractionProgress("Reading paper abstract and structure...");
+
+      const paperDomain: PaperMetadata = {
         id: selectedPaper.id,
         title: selectedPaper.title,
         authors: selectedPaper.authors,
         abstract: selectedPaper.abstract,
         publishedDate: selectedPaper.publishedDate,
-        source: selectedPaper.source,
+        source: selectedPaper.source as any,
         sourceId: selectedPaper.sourceId,
         url: selectedPaper.url,
         pdfUrl: selectedPaper.pdfUrl || undefined,
         categories: selectedPaper.categories,
-        status: selectedPaper.status,
+        status: selectedPaper.status as any,
+        rawContent: selectedPaper.rawContent || undefined,
+        createdAt: selectedPaper.createdAt.toISOString(),
+        updatedAt: selectedPaper.updatedAt.toISOString(),
       };
 
-      let extractionResult;
+      let extractionData;
       if (useStub) {
-        setExtractionProgress("Running deterministic offline stub extraction...");
-        extractionResult = createStubExtraction(paperMeta);
+        setExtractionProgress("Running deterministic stub extraction...");
+        extractionData = createStubExtraction(paperDomain);
       } else {
         const apiKey = process.env.OPENROUTER_API_KEY;
-        const model = process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
-        if (!apiKey) {
-          setExtractionProgress("OPENROUTER_API_KEY missing. Falling back to stub extraction...");
-          extractionResult = createStubExtraction(paperMeta);
+        const defaultModel = process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
+
+        const content = selectedPaper.rawContent || selectedPaper.abstract;
+        if (apiKey) {
+          setExtractionProgress(`Invoking OpenRouter model (${defaultModel})...`);
+          const llm = createOpenRouterClient({ apiKey, defaultModel });
+          extractionData = await extractPaperData(paperDomain, content, llm);
         } else {
-          setExtractionProgress(`Extracting via OpenRouter (${model})...`);
-          const llm = createOpenRouterClient({ apiKey, defaultModel: model });
-          const content = selectedPaper.rawContent || selectedPaper.abstract;
-          extractionResult = await extractPaperData(paperMeta, content, llm);
+          setExtractionProgress("No API key found. Using mock LLM client...");
+          const mockLLM = createMockLLMClient();
+          extractionData = await extractPaperData(paperDomain, content, mockLLM);
         }
       }
 
-      setExtractionProgress("Validating confidence and saving to Neon DB...");
-      evaluateExtractionConfidence(extractionResult);
+      setExtractionProgress("Evaluating confidence score...");
+      const confScore = evaluateExtractionConfidence(extractionData);
 
+      setExtractionProgress("Persisting extraction to Neon DB...");
       await prisma.paperExtraction.upsert({
         where: { paperId: selectedPaper.id },
         create: {
           paperId: selectedPaper.id,
-          methodology: extractionResult.methodology,
-          keyFindings: extractionResult.keyFindings,
-          contributions: extractionResult.contributions,
-          limitations: extractionResult.limitations,
-          confidence: extractionResult.confidence,
-          extractionNotes: extractionResult.extractionNotes,
-          extractedAt: new Date(extractionResult.extractedAt || Date.now()),
+          methodology: extractionData.methodology,
+          keyFindings: extractionData.keyFindings,
+          contributions: extractionData.contributions,
+          limitations: extractionData.limitations,
+          confidence: extractionData.confidence,
+          extractionNotes: extractionData.extractionNotes || confScore.reason,
         },
         update: {
-          methodology: extractionResult.methodology,
-          keyFindings: extractionResult.keyFindings,
-          contributions: extractionResult.contributions,
-          limitations: extractionResult.limitations,
-          confidence: extractionResult.confidence,
-          extractionNotes: extractionResult.extractionNotes,
-          extractedAt: new Date(extractionResult.extractedAt || Date.now()),
+          methodology: extractionData.methodology,
+          keyFindings: extractionData.keyFindings,
+          contributions: extractionData.contributions,
+          limitations: extractionData.limitations,
+          confidence: extractionData.confidence,
+          extractionNotes: extractionData.extractionNotes || confScore.reason,
         },
       });
 
@@ -159,27 +166,13 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
     }
   };
 
-  // Ranking handler for literature review
   const handleRankPapers = async () => {
-    if (!selectedProject || isRanking || papers.length === 0) return;
-    setIsRanking(true);
-    setActionError(null);
-    setRankingProgress(`Ranking ${papers.length} paper(s) against query...`);
+    if (!selectedProject || papers.length === 0) return;
 
     try {
-      const paperMetas: PaperMetadata[] = papers.map((p) => ({
-        id: p.id,
-        title: p.title,
-        authors: p.authors,
-        abstract: p.abstract,
-        publishedDate: p.publishedDate,
-        source: p.source,
-        sourceId: p.sourceId,
-        url: p.url,
-        pdfUrl: p.pdfUrl || undefined,
-        categories: p.categories,
-        status: p.status,
-      }));
+      setIsRanking(true);
+      setActionError(null);
+      setRankingProgress("Assembling candidate papers from database...");
 
       const projectDomain: LitReviewProject = {
         id: selectedProject.id,
@@ -191,13 +184,30 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
         status: selectedProject.status as any,
       };
 
+      const paperMetas: PaperMetadata[] = papers.map((p) => ({
+        id: p.id,
+        title: p.title,
+        authors: p.authors,
+        abstract: p.abstract,
+        publishedDate: p.publishedDate,
+        source: p.source as any,
+        sourceId: p.sourceId,
+        url: p.url,
+        pdfUrl: p.pdfUrl || undefined,
+        categories: p.categories,
+        status: p.status as any,
+        rawContent: p.rawContent || undefined,
+        createdAt: p.createdAt.toISOString(),
+        updatedAt: p.updatedAt.toISOString(),
+      }));
+
       const apiKey = process.env.OPENROUTER_API_KEY;
-      const model = process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
+      const defaultModel = process.env.OPENROUTER_MODEL || SCHOLARKIT_CONFIG.defaultModel;
 
       let entries;
       if (apiKey) {
-        setRankingProgress(`Classifying relevance via OpenRouter (${model})...`);
-        const llm = createOpenRouterClient({ apiKey, defaultModel: model });
+        setRankingProgress(`Ranking papers via OpenRouter (${defaultModel})...`);
+        const llm = createOpenRouterClient({ apiKey, defaultModel });
         entries = await classifyAndRankPapers(projectDomain, paperMetas, llm);
       } else {
         const mockLLM = createMockLLMClient({
@@ -299,12 +309,12 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
     }
   };
 
-  const handleBridgeReviewToNewsletter = async () => {
+  const handleBridgeReviewToBriefing = async () => {
     if (!selectedProject) return;
 
     try {
       setActionError(null);
-      const { createNewsletterFromLiteratureReview, buildLiteratureReviewDraft } = await import("@scholarkit/core");
+      const { createBriefingFromLiteratureReview, buildLiteratureReviewDraft } = await import("@scholarkit/core");
 
       const projectDomain: LitReviewProject = {
         id: selectedProject.id,
@@ -370,20 +380,20 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
       }
 
       const topPapers = entriesWithPapers.map((e) => e.paper as PaperMetadata);
-      const nextIssue = newsletters.length + 1;
-      const newsletterDraft = createNewsletterFromLiteratureReview(projectDomain, draftResult, topPapers, {
+      const nextIssue = briefings.length + 1;
+      const briefingDraft = createBriefingFromLiteratureReview(projectDomain, draftResult, topPapers, {
         issueNumber: nextIssue,
       });
 
-      await prisma.newsletter.create({
+      await prisma.briefing.create({
         data: {
-          title: newsletterDraft.title,
-          issueNumber: newsletterDraft.issueNumber,
-          contentType: newsletterDraft.contentType,
-          status: newsletterDraft.status,
-          target: newsletterDraft.target,
+          title: briefingDraft.title,
+          issueNumber: briefingDraft.issueNumber,
+          contentType: briefingDraft.contentType,
+          status: briefingDraft.status,
+          target: briefingDraft.target,
           sections: {
-            create: newsletterDraft.sections.map((s) => ({
+            create: briefingDraft.sections.map((s) => ({
               title: s.title,
               content: s.content,
               order: s.order,
@@ -394,32 +404,32 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
         },
       });
 
-      await refreshNewsletters();
-      setActiveTab("newsletters");
+      await refreshBriefings();
+      setActiveTab("briefings");
       setSelectedIndex(0);
     } catch (err) {
-      setActionError(`Bridge to newsletter failed: ${(err as Error).message}`);
+      setActionError(`Bridge to briefing failed: ${(err as Error).message}`);
     }
   };
 
   const handleDirectTransition = async (action: WorkflowAction) => {
-    if (!selectedNewsletter) return;
+    if (!selectedBriefing) return;
 
     try {
       setActionError(null);
       const { transitionReviewStatus } = await import("@scholarkit/core");
-      const nextStatus = transitionReviewStatus(selectedNewsletter.status as any, action);
+      const nextStatus = transitionReviewStatus(selectedBriefing.status as any, action);
 
-      await prisma.newsletter.update({
-        where: { id: selectedNewsletter.id },
+      await prisma.briefing.update({
+        where: { id: selectedBriefing.id },
         data: {
           status: nextStatus,
-          scheduledAt: nextStatus === "scheduled" ? new Date(Date.now() + 3600000) : selectedNewsletter.scheduledAt,
-          sentAt: nextStatus === "sent" ? new Date() : selectedNewsletter.sentAt,
+          scheduledAt: nextStatus === "scheduled" ? new Date(Date.now() + 3600000) : selectedBriefing.scheduledAt,
+          sentAt: nextStatus === "sent" ? new Date() : selectedBriefing.sentAt,
         },
       });
 
-      await refreshNewsletters();
+      await refreshBriefings();
     } catch (err) {
       setActionError(`Transition failed: ${(err as Error).message}`);
     }
@@ -428,16 +438,16 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
   const handleRunSchedulerWorker = async () => {
     try {
       setActionError(null);
-      const { evaluateScheduledQueue, formatNewsletterForTelegramHtml, chunkTelegramMessage, sendTelegramChunks } = await import("@scholarkit/core");
+      const { evaluateScheduledQueue, formatBriefingForTelegramHtml, chunkTelegramMessage, sendTelegramChunks } = await import("@scholarkit/core");
 
-      const scheduledNewsletters = await prisma.newsletter.findMany({
+      const scheduledBriefings = await prisma.briefing.findMany({
         where: { status: "scheduled" },
         include: { sections: { orderBy: { order: "asc" } } },
       });
 
-      const { due } = evaluateScheduledQueue(scheduledNewsletters, new Date());
+      const { due } = evaluateScheduledQueue(scheduledBriefings, new Date());
       if (due.length === 0) {
-        setActionError("No due scheduled newsletters in queue.");
+        setActionError("No due scheduled briefings in queue.");
         return;
       }
 
@@ -449,19 +459,19 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
         return;
       }
 
-      for (const nl of due) {
-        await prisma.newsletter.update({
-          where: { id: nl.id },
+      for (const b of due) {
+        await prisma.briefing.update({
+          where: { id: b.id },
           data: { status: "sending" },
         });
 
-        const html = formatNewsletterForTelegramHtml({
-          title: nl.title,
-          issueNumber: nl.issueNumber || undefined,
-          contentType: nl.contentType,
+        const html = formatBriefingForTelegramHtml({
+          title: b.title,
+          issueNumber: b.issueNumber || undefined,
+          contentType: b.contentType,
           status: "sending",
-          target: nl.target,
-          sections: nl.sections.map((s) => ({
+          target: b.target,
+          sections: b.sections.map((s) => ({
             title: s.title,
             content: s.content,
             order: s.order,
@@ -475,20 +485,20 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
 
         await prisma.deliveryLog.create({
           data: {
-            newsletterId: nl.id,
+            briefingId: b.id,
             telegramChatId: targetChatId,
             status: "sent",
             sentAt: new Date(),
           },
         });
 
-        await prisma.newsletter.update({
-          where: { id: nl.id },
+        await prisma.briefing.update({
+          where: { id: b.id },
           data: { status: "sent", sentAt: new Date() },
         });
       }
 
-      await refreshNewsletters();
+      await refreshBriefings();
     } catch (err) {
       setActionError(`Scheduler worker error: ${(err as Error).message}`);
     }
@@ -502,7 +512,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
     isIngestModalOpen ||
     isCreateReviewOpen ||
     isDraftModalOpen ||
-    isCreateNewsletterOpen ||
+    isCreateBriefingOpen ||
     isTransitionOpen ||
     isTelegramPreviewOpen;
 
@@ -524,7 +534,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
         setActiveTab("reviews");
         setSelectedIndex(0);
       } else if (input === "3") {
-        setActiveTab("newsletters");
+        setActiveTab("briefings");
         setSelectedIndex(0);
       } else if (key.tab) {
         setActivePane((prev) => (prev === "left" ? "right" : "left"));
@@ -550,29 +560,29 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
             setIsDraftModalOpen(true);
           }
         } else if (input === "N") {
-          handleBridgeReviewToNewsletter();
+          handleBridgeReviewToBriefing();
         }
-      } else if (activeTab === "newsletters") {
+      } else if (activeTab === "briefings") {
         if (input === "n" || input === "N") {
-          setIsCreateNewsletterOpen(true);
+          setIsCreateBriefingOpen(true);
         } else if (input === "t" || input === "T") {
-          if (selectedNewsletter) {
+          if (selectedBriefing) {
             setIsTransitionOpen(true);
           }
         } else if (input === "p" || input === "P") {
-          if (selectedNewsletter) {
+          if (selectedBriefing) {
             setIsTelegramPreviewOpen(true);
           }
         } else if (input === "a" || input === "A") {
-          if (selectedNewsletter?.status === "in_review") {
+          if (selectedBriefing?.status === "in_review") {
             handleDirectTransition("approve");
           }
         } else if (input === "c" || input === "C") {
-          if (selectedNewsletter?.status === "in_review") {
+          if (selectedBriefing?.status === "in_review") {
             handleDirectTransition("request_changes");
           }
         } else if (input === "S") {
-          if (selectedNewsletter?.status === "approved") {
+          if (selectedBriefing?.status === "approved") {
             handleDirectTransition("schedule");
           }
         } else if (input === "w" || input === "W") {
@@ -588,7 +598,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
       ? "Research Papers"
       : activeTab === "reviews"
         ? "Literature Reviews"
-        : "Newsletters & Publishing";
+        : "Research Briefings";
 
   const paperHotkeys = [
     { key: "i", label: "Ingest arXiv" },
@@ -602,21 +612,21 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
     { key: "s", label: "Search arXiv" },
     { key: "r", label: "Rank Papers" },
     { key: "d", label: "Draft Review" },
-    { key: "N", label: "To Newsletter" },
+    { key: "N", label: "To Briefing" },
     { key: "R", label: "Refresh" },
   ];
 
-  const newsletterHotkeys = [
+  const briefingHotkeys = [
     { key: "n", label: "New Issue" },
     { key: "t", label: "Transition" },
-    ...(selectedNewsletter?.status === "in_review"
+    ...(selectedBriefing?.status === "in_review"
       ? [
           { key: "a", label: "Approve" },
           { key: "c", label: "Request Changes" },
         ]
       : []),
-    ...(selectedNewsletter?.status === "approved" ? [{ key: "S", label: "Schedule" }] : []),
-    ...(selectedNewsletter?.status === "scheduled" ? [{ key: "w", label: "Dispatch" }] : []),
+    ...(selectedBriefing?.status === "approved" ? [{ key: "S", label: "Schedule" }] : []),
+    ...(selectedBriefing?.status === "scheduled" ? [{ key: "w", label: "Dispatch" }] : []),
     { key: "p", label: "Telegram Preview" },
     { key: "R", label: "Refresh" },
   ];
@@ -626,7 +636,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
       ? paperHotkeys
       : activeTab === "reviews"
         ? reviewHotkeys
-        : newsletterHotkeys;
+        : briefingHotkeys;
 
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0}>
@@ -655,23 +665,23 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
         onClose={() => setIsDraftModalOpen(false)}
       />
 
-      {/* Newsletter Modals */}
-      <CreateNewsletterModal
-        isOpen={isCreateNewsletterOpen}
-        onClose={() => setIsCreateNewsletterOpen(false)}
-        onSuccess={refreshNewsletters}
+      {/* Briefing Modals */}
+      <CreateBriefingModal
+        isOpen={isCreateBriefingOpen}
+        onClose={() => setIsCreateBriefingOpen(false)}
+        onSuccess={refreshBriefings}
       />
       <TransitionDialog
-        newsletter={selectedNewsletter}
+        briefing={selectedBriefing}
         isOpen={isTransitionOpen}
         onClose={() => setIsTransitionOpen(false)}
-        onSuccess={refreshNewsletters}
+        onSuccess={refreshBriefings}
       />
       <TelegramPreviewModal
-        newsletter={selectedNewsletter}
+        briefing={selectedBriefing}
         isOpen={isTelegramPreviewOpen}
         onClose={() => setIsTelegramPreviewOpen(false)}
-        onSuccess={refreshNewsletters}
+        onSuccess={refreshBriefings}
       />
 
       {/* 3. Main Dual-Pane Master-Detail Area */}
@@ -684,7 +694,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
                 ? `Papers (${papers.length})`
                 : activeTab === "reviews"
                   ? `Projects (${projects.length})`
-                  : `Issues (${newsletters.length})`
+                  : `Briefings (${briefings.length})`
             }
             width={28}
             isFocused={activePane === "left"}
@@ -708,8 +718,8 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
                 isFocused={activePane === "left"}
               />
             ) : (
-              <NewsletterListView
-                newsletters={newsletters}
+              <BriefingListView
+                briefings={briefings}
                 selectedIndex={selectedIndex}
                 onSelect={setSelectedIndex}
                 isFocused={activePane === "left"}
@@ -724,7 +734,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
                 ? "Paper Inspection"
                 : activeTab === "reviews"
                   ? "Project & Ranked Matrix"
-                  : "Issue Details & Workflow"
+                  : "Briefing Details & Workflow"
             }
             flexGrow={1}
             isFocused={activePane === "right"}
@@ -744,7 +754,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
                 rankingProgressText={rankingProgress}
               />
             ) : (
-              <NewsletterDetailView newsletter={selectedNewsletter} />
+              <BriefingDetailView briefing={selectedBriefing} />
             )}
           </FocusedPanel>
         </Box>

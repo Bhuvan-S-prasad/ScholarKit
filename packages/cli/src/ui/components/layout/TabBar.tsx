@@ -27,10 +27,10 @@ export const TabBar: React.FC<TabBarProps> = ({ activeTab }) => {
       </Text>
       <Text dimColor>│</Text>
       <Text
-        color={!isNoColor && activeTab === "newsletters" ? colors.primary : undefined}
-        bold={activeTab === "newsletters"}
+        color={!isNoColor && (activeTab === "briefings" || (activeTab as any) === "newsletters") ? colors.primary : undefined}
+        bold={activeTab === "briefings" || (activeTab as any) === "newsletters"}
       >
-        {activeTab === "newsletters" ? "[3. Newsletters (Active)]" : " 3. Newsletters"}
+        {activeTab === "briefings" || (activeTab as any) === "newsletters" ? "[3. Briefings (Active)]" : " 3. Briefings"}
       </Text>
     </Box>
   );

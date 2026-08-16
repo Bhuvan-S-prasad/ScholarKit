@@ -3,7 +3,7 @@ import { render } from "ink";
 import { App, TabId } from "./App.js";
 
 export interface LaunchTuiOptions {
-  initialTab?: TabId;
+  initialTab?: TabId | "newsletters";
 }
 
 export async function launchTui(options: LaunchTuiOptions = {}): Promise<void> {
