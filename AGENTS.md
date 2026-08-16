@@ -31,7 +31,7 @@ This project follows a **shared-core pattern**. The rules that make that pattern
 - **LLM-backed operations use an injected client.** `extraction.ts`, `analysis.ts`, and the classify/rank functions in `literature.ts` take a model client as a parameter (see `operations/llm-client.ts`), never import an LLM provider SDK directly inside `core` operation files. This is what keeps `core`'s test suite from needing a live API key.
 - **Structured output from the LLM is validated, not trusted.** Prompt for JSON matching the target Zod schema → parse → validate. One retry with the validation error fed back into the prompt on failure. Two failures → typed error, never silently-wrong data.
 - **`packages/db` owns the Prisma client lifecycle; `core` doesn't.** `core` depends on the Prisma-generated types, not on constructing its own client. Each app (`cli`, `local-mcp`, `remote-mcp`) owns its own client instance/connection lifecycle via `packages/db`.
-- **Papers and literature review entries do not go through the review/approval state machine.** Only `Newsletter`/digest records do (`draft → in_review → approved → scheduled → sending → sent`, with `changes_requested` and `failed → retry` branches). Don't add approval gates to paper ingestion/extraction — that's scope creep from the content-hub project this pattern was originally built for.
+- **Papers and literature review entries do not go through the review/approval state machine.** Only `Briefing`/digest records do (`draft → in_review → approved → scheduled → sending → sent`, with `changes_requested` and `failed → retry` branches). Don't add approval gates to paper ingestion/extraction — that's scope creep from the content-hub project this pattern was originally built for.
 - **Docker is not the database.** Neon (cloud Postgres) is the one and only dev/prod database. Docker's job is local disposable infrastructure (test DB, Prisma shadow DB) and packaging `remote-mcp` for deployment — never a substitute persistent datastore. See §6a.
 
 ---
@@ -65,7 +65,7 @@ scholarkit/
 │   └── implementation-plan.md   # full design doc — source of truth for detail
 ├── packages/
 │   ├── cli/
-│   │   └── src/index.ts         # commander: paper, review, newsletter sub-commands
+│   │   └── src/index.ts         # commander: paper, review, briefing sub-commands
 │   ├── core/
 │   │   └── src/
 │   │       ├── schemas.ts
@@ -75,7 +75,7 @@ scholarkit/
 │   │       │   ├── extraction.ts      # LLM-backed structured extraction & confidence
 │   │       │   ├── analysis.ts        # LLM-backed comparative matrix & gap analysis
 │   │       │   ├── literature.ts      # LLM-backed (4-tier classification, ranking & review draft)
-│   │       │   ├── newsletter.ts      # review-to-newsletter & recent papers roundup synthesis
+│   │       │   ├── briefing.ts        # review-to-briefing & recent papers roundup synthesis
 │   │       │   ├── workflow.ts        # review state machine transitions
 │   │       │   ├── scheduler.ts       # pure scheduled queue evaluations
 │   │       │   ├── subscribers.ts
@@ -223,10 +223,10 @@ Build multi-client remote MCP deployment:
 
 ## 8. Open decisions (resolved & documented)
 
-- **Literature Review Scope (v1 vs Roadmap)**: **RESOLVED (v1 = Ingested Repository Classification & Synthesis + arXiv Query Search)**. In v1, the Literature Review manager queries arXiv Atom API for project research queries (`searchArxivPapers`), deduplicates by arXiv `sourceId` against Neon DB, classifies (into 4 tiers: `highly_relevant`, `relevant`, `background`, `irrelevant`) and ranks papers (`classifyAndRankPapers`), synthesizes structured drafts (`buildLiteratureReviewDraft`), and bridges drafts into newsletters (`createNewsletterFromLiteratureReview`). Multi-provider external search APIs (Semantic Scholar / PubMed) are deferred to future roadmap.
-- **Production Scheduling Mechanism**: **RESOLVED (CLI Cron-Worker + Remote Poller)**. In CLI/standalone mode, `scholarkit newsletter worker --run-once` (triggered via OS cron, GitHub Actions, or task scheduler) is the production queue executor. In Phase 3 (`apps/remote-mcp`), the Hono background scheduler calls the same shared core evaluation logic (`evaluateScheduledQueue`).
-- **Single-user tool vs. multi-subscriber newsletter?** Determines whether `Subscriber`/`DeliveryLog`/webhook/`remote-mcp`+Clerk are needed at all in v1. Default assumption until told otherwise: **build solo-mode first** (CLI and Local MCP), defer the subscriber/delivery machinery.
-- **Channel broadcast vs. per-subscriber DM** for Telegram — DM is implied by "personalize" being in the newsletter spec, but channel is the faster MVP if personalization can wait.
+- **Literature Review Scope (v1 vs Roadmap)**: **RESOLVED (v1 = Ingested Repository Classification & Synthesis + arXiv Query Search)**. In v1, the Literature Review manager queries arXiv Atom API for project research queries (`searchArxivPapers`), deduplicates by arXiv `sourceId` against Neon DB, classifies (into 4 tiers: `highly_relevant`, `relevant`, `background`, `irrelevant`) and ranks papers (`classifyAndRankPapers`), synthesizes structured drafts (`buildLiteratureReviewDraft`), and bridges drafts into research briefings (`createBriefingFromLiteratureReview`). Multi-provider external search APIs (Semantic Scholar / PubMed) are deferred to future roadmap.
+- **Production Scheduling Mechanism**: **RESOLVED (CLI Cron-Worker + Remote Poller)**. In CLI/standalone mode, `scholarkit briefing worker --run-once` (triggered via OS cron, GitHub Actions, or task scheduler) is the production queue executor. In Phase 3 (`apps/remote-mcp`), the Hono background scheduler calls the same shared core evaluation logic (`evaluateScheduledQueue`).
+- **Single-user tool vs. multi-subscriber briefing?** Determines whether `Subscriber`/`DeliveryLog`/webhook/`remote-mcp`+Clerk are needed at all in v1. Default assumption until told otherwise: **build solo-mode first** (CLI and Local MCP), defer the subscriber/delivery machinery.
+- **Channel broadcast vs. per-subscriber DM** for Telegram — DM is implied by "personalize" being in the briefing spec, but channel is the faster MVP if personalization can wait.
 - Paper sources beyond arXiv (Semantic Scholar, PubMed) — not needed for v1.
 - PDF handling — local upload only, or also fetch-by-URL?
 - Extraction confidence threshold — exact cutoff for "flag to human" not yet set (defaults to 0.75).
