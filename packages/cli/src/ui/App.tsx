@@ -4,8 +4,11 @@ import {
   extractPaperData,
   createStubExtraction,
   evaluateExtractionConfidence,
+  classifyAndRankPapers,
   createOpenRouterClient,
+  createMockLLMClient,
   PaperMetadata,
+  LitReviewProject,
 } from "@scholarkit/core";
 import { prisma } from "@scholarkit/db";
 import { ThemeProvider } from "./contexts/ThemeContext.js";
@@ -19,6 +22,10 @@ import { StatusSpinner } from "./components/common/StatusSpinner.js";
 import { PaperListView } from "./views/papers/PaperListView.js";
 import { PaperDetailView } from "./views/papers/PaperDetailView.js";
 import { IngestModal } from "./views/papers/IngestModal.js";
+import { ReviewListView } from "./views/reviews/ReviewListView.js";
+import { ReviewDetailView } from "./views/reviews/ReviewDetailView.js";
+import { CreateReviewModal } from "./views/reviews/CreateReviewModal.js";
+import { ReviewDraftModal } from "./views/reviews/ReviewDraftModal.js";
 
 export type TabId = "papers" | "reviews" | "newsletters";
 
@@ -28,17 +35,24 @@ export interface AppProps {
 
 const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
   const { exit } = useApp();
-  const { papers, projects, newsletters, loading, error, refreshAll, refreshPapers } = useAppState();
+  const { papers, projects, newsletters, loading, error, refreshAll, refreshPapers, refreshProjects } = useAppState();
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const [activePane, setActivePane] = useState<"left" | "right">("left");
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
 
-  // Ingestion and extraction state
+  // Paper modals & action states
   const [isIngestModalOpen, setIsIngestModalOpen] = useState<boolean>(false);
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   const [extractionProgress, setExtractionProgress] = useState<string>("");
 
+  // Review modals & action states
+  const [isCreateReviewOpen, setIsCreateReviewOpen] = useState<boolean>(false);
+  const [isDraftModalOpen, setIsDraftModalOpen] = useState<boolean>(false);
+  const [isRanking, setIsRanking] = useState<boolean>(false);
+  const [rankingProgress, setRankingProgress] = useState<string>("");
+
   const selectedPaper = papers[selectedIndex] || null;
+  const selectedProject = projects[selectedIndex] || null;
 
   // Extraction handler
   const handleExtractPaper = async (useStub: boolean) => {
@@ -116,10 +130,99 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
     }
   };
 
+  // Ranking handler for literature review
+  const handleRankPapers = async () => {
+    if (!selectedProject || isRanking || papers.length === 0) return;
+    setIsRanking(true);
+    setRankingProgress(`Ranking ${papers.length} paper(s) against query...`);
+
+    try {
+      const paperMetas: PaperMetadata[] = papers.map((p) => ({
+        id: p.id,
+        title: p.title,
+        authors: p.authors,
+        abstract: p.abstract,
+        publishedDate: p.publishedDate,
+        source: p.source,
+        sourceId: p.sourceId,
+        url: p.url,
+        pdfUrl: p.pdfUrl || undefined,
+        categories: p.categories,
+        status: p.status,
+      }));
+
+      const projectDomain: LitReviewProject = {
+        id: selectedProject.id,
+        title: selectedProject.title,
+        description: selectedProject.description || undefined,
+        query: selectedProject.query,
+        inclusionCriteria: selectedProject.inclusionCriteria,
+        exclusionCriteria: selectedProject.exclusionCriteria,
+        status: selectedProject.status as any,
+      };
+
+      const apiKey = process.env.OPENROUTER_API_KEY;
+      const model = process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
+
+      let entries;
+      if (apiKey) {
+        setRankingProgress(`Classifying relevance via OpenRouter (${model})...`);
+        const llm = createOpenRouterClient({ apiKey, defaultModel: model });
+        entries = await classifyAndRankPapers(projectDomain, paperMetas, llm);
+      } else {
+        const mockLLM = createMockLLMClient({
+          onStructured: () => ({
+            evaluations: papers.map((p) => ({
+              paperId: p.id,
+              relevanceScore: 0.88,
+              classification: "highly_relevant",
+              reasonForScore: "Direct match on methodology and research query terms.",
+            })),
+          }),
+        });
+        entries = await classifyAndRankPapers(projectDomain, paperMetas, mockLLM);
+      }
+
+      setRankingProgress("Saving ranked entries to Neon DB...");
+      for (const entry of entries) {
+        await prisma.litReviewEntry.upsert({
+          where: {
+            projectId_paperId: {
+              projectId: selectedProject.id,
+              paperId: entry.paperId,
+            },
+          },
+          create: {
+            projectId: selectedProject.id,
+            paperId: entry.paperId,
+            relevanceScore: entry.relevanceScore,
+            classification: entry.classification,
+            reasonForScore: entry.reasonForScore,
+            notes: entry.notes,
+          },
+          update: {
+            relevanceScore: entry.relevanceScore,
+            classification: entry.classification,
+            reasonForScore: entry.reasonForScore,
+            notes: entry.notes,
+          },
+        });
+      }
+
+      await refreshProjects();
+    } finally {
+      setIsRanking(false);
+      setRankingProgress("");
+    }
+  };
+
+  const isAnyModalOpen = isIngestModalOpen || isCreateReviewOpen || isDraftModalOpen;
+  const isBusy = isExtracting || isRanking;
+
   // Global key bindings
   useInput(
     (input, key) => {
-      if (isIngestModalOpen || isExtracting) return;
+      if (isAnyModalOpen || isBusy) return;
 
       if (input === "q" || input === "Q") {
         exit();
@@ -146,9 +249,19 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
         } else if (input === "s" || input === "S") {
           handleExtractPaper(true);
         }
+      } else if (activeTab === "reviews") {
+        if (input === "c" || input === "C") {
+          setIsCreateReviewOpen(true);
+        } else if (input === "r" || input === "R") {
+          handleRankPapers();
+        } else if (input === "d" || input === "D") {
+          if (selectedProject && selectedProject.entries.length > 0) {
+            setIsDraftModalOpen(true);
+          }
+        }
       }
     },
-    { isActive: !isIngestModalOpen && !isExtracting }
+    { isActive: !isAnyModalOpen && !isBusy }
   );
 
   const activeTabTitle =
@@ -166,7 +279,14 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
           { key: "s", label: "Stub Extract" },
           { key: "R", label: "Refresh" },
         ]
-      : [{ key: "R", label: "Refresh" }];
+      : activeTab === "reviews"
+        ? [
+            { key: "c", label: "New Project" },
+            { key: "r", label: "Rank Papers" },
+            { key: "d", label: "Draft Review" },
+            { key: "R", label: "Refresh" },
+          ]
+        : [{ key: "R", label: "Refresh" }];
 
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0}>
@@ -176,15 +296,25 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
       {/* 2. Tab Bar */}
       <TabBar activeTab={activeTab} />
 
-      {/* Ingest Modal (Conditional) */}
+      {/* Modals */}
       <IngestModal
         isOpen={isIngestModalOpen}
         onClose={() => setIsIngestModalOpen(false)}
         onSuccess={refreshPapers}
       />
+      <CreateReviewModal
+        isOpen={isCreateReviewOpen}
+        onClose={() => setIsCreateReviewOpen(false)}
+        onSuccess={refreshProjects}
+      />
+      <ReviewDraftModal
+        project={selectedProject}
+        isOpen={isDraftModalOpen}
+        onClose={() => setIsDraftModalOpen(false)}
+      />
 
       {/* 3. Main Dual-Pane Master-Detail Area */}
-      {!isIngestModalOpen && (
+      {!isAnyModalOpen && (
         <Box height={16} gap={1}>
           {/* Left Master List Pane */}
           <FocusedPanel
@@ -210,21 +340,12 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
                 isFocused={activePane === "left"}
               />
             ) : activeTab === "reviews" ? (
-              projects.length === 0 ? (
-                <Text dimColor>No review projects found.</Text>
-              ) : (
-                <Box flexDirection="column">
-                  {projects.slice(0, 8).map((proj, idx) => (
-                    <Box key={proj.id} justifyContent="space-between">
-                      <Text bold={idx === selectedIndex} color={idx === selectedIndex ? "cyan" : undefined}>
-                        {idx === selectedIndex ? "▶ " : "  "}
-                        {proj.title.slice(0, 16)}
-                      </Text>
-                      <TextStatusBadge status={proj.status} />
-                    </Box>
-                  ))}
-                </Box>
-              )
+              <ReviewListView
+                projects={projects}
+                selectedIndex={selectedIndex}
+                onSelect={setSelectedIndex}
+                isFocused={activePane === "left"}
+              />
             ) : newsletters.length === 0 ? (
               <Text dimColor>No newsletters drafted.</Text>
             ) : (
@@ -243,7 +364,13 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
 
           {/* Right Detail Pane */}
           <FocusedPanel
-            title={activeTab === "papers" ? "Paper Inspection" : "Details & Inspection"}
+            title={
+              activeTab === "papers"
+                ? "Paper Inspection"
+                : activeTab === "reviews"
+                  ? "Project & Ranked Matrix"
+                  : "Details & Inspection"
+            }
             width="65%"
             isFocused={activePane === "right"}
           >
@@ -252,6 +379,12 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
                 paper={selectedPaper}
                 extracting={isExtracting}
                 extractionProgressText={extractionProgress}
+              />
+            ) : activeTab === "reviews" ? (
+              <ReviewDetailView
+                project={selectedProject}
+                ranking={isRanking}
+                rankingProgressText={rankingProgress}
               />
             ) : (
               <Box flexDirection="column">
