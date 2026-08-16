@@ -26,6 +26,11 @@ import { ReviewListView } from "./views/reviews/ReviewListView.js";
 import { ReviewDetailView } from "./views/reviews/ReviewDetailView.js";
 import { CreateReviewModal } from "./views/reviews/CreateReviewModal.js";
 import { ReviewDraftModal } from "./views/reviews/ReviewDraftModal.js";
+import { NewsletterListView } from "./views/newsletters/NewsletterListView.js";
+import { NewsletterDetailView } from "./views/newsletters/NewsletterDetailView.js";
+import { TransitionDialog } from "./views/newsletters/TransitionDialog.js";
+import { TelegramPreviewModal } from "./views/newsletters/TelegramPreviewModal.js";
+import { CreateNewsletterModal } from "./views/newsletters/CreateNewsletterModal.js";
 
 export type TabId = "papers" | "reviews" | "newsletters";
 
@@ -35,7 +40,17 @@ export interface AppProps {
 
 const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
   const { exit } = useApp();
-  const { papers, projects, newsletters, loading, error, refreshAll, refreshPapers, refreshProjects } = useAppState();
+  const {
+    papers,
+    projects,
+    newsletters,
+    loading,
+    error,
+    refreshAll,
+    refreshPapers,
+    refreshProjects,
+    refreshNewsletters,
+  } = useAppState();
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const [activePane, setActivePane] = useState<"left" | "right">("left");
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
@@ -51,8 +66,14 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
   const [isRanking, setIsRanking] = useState<boolean>(false);
   const [rankingProgress, setRankingProgress] = useState<string>("");
 
+  // Newsletter modals & action states
+  const [isCreateNewsletterOpen, setIsCreateNewsletterOpen] = useState<boolean>(false);
+  const [isTransitionOpen, setIsTransitionOpen] = useState<boolean>(false);
+  const [isTelegramPreviewOpen, setIsTelegramPreviewOpen] = useState<boolean>(false);
+
   const selectedPaper = papers[selectedIndex] || null;
   const selectedProject = projects[selectedIndex] || null;
+  const selectedNewsletter = newsletters[selectedIndex] || null;
 
   // Extraction handler
   const handleExtractPaper = async (useStub: boolean) => {
@@ -216,7 +237,14 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
     }
   };
 
-  const isAnyModalOpen = isIngestModalOpen || isCreateReviewOpen || isDraftModalOpen;
+  const isAnyModalOpen =
+    isIngestModalOpen ||
+    isCreateReviewOpen ||
+    isDraftModalOpen ||
+    isCreateNewsletterOpen ||
+    isTransitionOpen ||
+    isTelegramPreviewOpen;
+
   const isBusy = isExtracting || isRanking;
 
   // Global key bindings
@@ -259,6 +287,18 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
             setIsDraftModalOpen(true);
           }
         }
+      } else if (activeTab === "newsletters") {
+        if (input === "n" || input === "N") {
+          setIsCreateNewsletterOpen(true);
+        } else if (input === "t" || input === "T") {
+          if (selectedNewsletter) {
+            setIsTransitionOpen(true);
+          }
+        } else if (input === "p" || input === "P") {
+          if (selectedNewsletter) {
+            setIsTelegramPreviewOpen(true);
+          }
+        }
       }
     },
     { isActive: !isAnyModalOpen && !isBusy }
@@ -286,7 +326,12 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
             { key: "d", label: "Draft Review" },
             { key: "R", label: "Refresh" },
           ]
-        : [{ key: "R", label: "Refresh" }];
+        : [
+            { key: "n", label: "New Issue" },
+            { key: "t", label: "Transition" },
+            { key: "p", label: "Telegram Preview" },
+            { key: "R", label: "Refresh" },
+          ];
 
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0}>
@@ -296,12 +341,14 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
       {/* 2. Tab Bar */}
       <TabBar activeTab={activeTab} />
 
-      {/* Modals */}
+      {/* Paper Modals */}
       <IngestModal
         isOpen={isIngestModalOpen}
         onClose={() => setIsIngestModalOpen(false)}
         onSuccess={refreshPapers}
       />
+
+      {/* Review Modals */}
       <CreateReviewModal
         isOpen={isCreateReviewOpen}
         onClose={() => setIsCreateReviewOpen(false)}
@@ -311,6 +358,25 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
         project={selectedProject}
         isOpen={isDraftModalOpen}
         onClose={() => setIsDraftModalOpen(false)}
+      />
+
+      {/* Newsletter Modals */}
+      <CreateNewsletterModal
+        isOpen={isCreateNewsletterOpen}
+        onClose={() => setIsCreateNewsletterOpen(false)}
+        onSuccess={refreshNewsletters}
+      />
+      <TransitionDialog
+        newsletter={selectedNewsletter}
+        isOpen={isTransitionOpen}
+        onClose={() => setIsTransitionOpen(false)}
+        onSuccess={refreshNewsletters}
+      />
+      <TelegramPreviewModal
+        newsletter={selectedNewsletter}
+        isOpen={isTelegramPreviewOpen}
+        onClose={() => setIsTelegramPreviewOpen(false)}
+        onSuccess={refreshNewsletters}
       />
 
       {/* 3. Main Dual-Pane Master-Detail Area */}
@@ -346,19 +412,13 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
                 onSelect={setSelectedIndex}
                 isFocused={activePane === "left"}
               />
-            ) : newsletters.length === 0 ? (
-              <Text dimColor>No newsletters drafted.</Text>
             ) : (
-              <Box flexDirection="column">
-                {newsletters.slice(0, 8).map((nl, idx) => (
-                  <Box key={nl.id} justifyContent="space-between">
-                    <Text bold={idx === selectedIndex} color={idx === selectedIndex ? "cyan" : undefined}>
-                      {idx === selectedIndex ? "▶ " : "  "}#{nl.issueNumber || "—"} {nl.title.slice(0, 14)}
-                    </Text>
-                    <TextStatusBadge status={nl.status} />
-                  </Box>
-                ))}
-              </Box>
+              <NewsletterListView
+                newsletters={newsletters}
+                selectedIndex={selectedIndex}
+                onSelect={setSelectedIndex}
+                isFocused={activePane === "left"}
+              />
             )}
           </FocusedPanel>
 
@@ -369,7 +429,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
                 ? "Paper Inspection"
                 : activeTab === "reviews"
                   ? "Project & Ranked Matrix"
-                  : "Details & Inspection"
+                  : "Issue Details & Workflow"
             }
             width="65%"
             isFocused={activePane === "right"}
@@ -387,9 +447,7 @@ const MainView: React.FC<{ initialTab: TabId }> = ({ initialTab }) => {
                 rankingProgressText={rankingProgress}
               />
             ) : (
-              <Box flexDirection="column">
-                <Text dimColor>Select an item from the left pane to view structured details.</Text>
-              </Box>
+              <NewsletterDetailView newsletter={selectedNewsletter} />
             )}
           </FocusedPanel>
         </Box>
