@@ -200,13 +200,13 @@ Work through each phase sequentially — each phase completes an entire adapter 
 - [x] **Interactive Dashboard (TUI)**:
   - `scholarkit tui [--dev]` — dual-pane master-detail dashboard with debounced filtering (`/`), full keyboard navigation, arXiv ingestion modal (`[i]`), live extraction (`[e]`), review project auto-search prompt, on-demand search (`[s]`), review ranking (`[r]`), draft synthesis (`[d]`), review-to-briefing bridge (`[N]`), contextual workflow hints, editorial approvals (`[a]`/`[c]`), schedule triggers (`[S]`), worker dispatcher (`[w]`), briefing state machine (`[t]`), and Telegram preview (`[p]`).
 
-### Phase 2: Local MCP Server (`packages/local-mcp`)
+### Phase 2: Local MCP Server (`packages/local-mcp`) (Completed)
 Expose all validated core domain operations as agent tools over stdio:
-- [ ] Stdio MCP Server setup using `@modelcontextprotocol/sdk`.
-- [ ] Register Paper Tools (`ingest_paper`, `extract_paper`, `analyze_papers`).
-- [ ] Register Literature Review Tools (`create_review_project`, `search_arxiv_papers`, `rank_papers`, `draft_literature_review`, `bridge_review_to_briefing`).
-- [ ] Register Briefing & Workflow Tools (`draft_briefing`, `transition_briefing_status`, `schedule_briefing`, `dispatch_scheduled_briefings`, `send_briefing`).
-- [ ] Connect and test with local IDE / Claude Desktop / Antigravity via `mcp.json`.
+- [x] Stdio MCP Server setup using `@modelcontextprotocol/sdk`.
+- [x] Register Paper Tools (`ingest_paper`, `extract_paper`, `analyze_papers`, `list_papers`, `get_paper`).
+- [x] Register Literature Review Tools (`create_review_project`, `search_arxiv_papers`, `rank_papers`, `draft_literature_review`, `bridge_review_to_briefing`, `list_review_projects`).
+- [x] Register Briefing & Workflow Tools (`draft_briefing`, `transition_briefing_status`, `schedule_briefing`, `dispatch_scheduled_briefings`, `send_briefing`, `preview_briefing_telegram`, `list_briefings`).
+- [x] Connect and test with local IDE / Claude Desktop / Antigravity via `mcp.json`.
 
 ### Phase 3: Remote MCP Server (`apps/remote-mcp`)
 Build multi-client remote MCP deployment:
