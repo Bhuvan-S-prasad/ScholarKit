@@ -25,6 +25,28 @@ export function buildArxivApiUrl(arxivId: string): string {
 }
 
 /**
+ * Fetches and parses paper metadata from arXiv Atom API by arXiv ID or URL.
+ */
+export async function fetchArxivMetadata(
+  identifier: string,
+  options?: { fetchFn?: typeof fetch }
+): Promise<PaperMetadata> {
+  const cleanId = normalizeArxivId(identifier);
+  const apiUrl = buildArxivApiUrl(cleanId);
+  const fetchImpl = options?.fetchFn || fetch;
+  const res = await fetchImpl(apiUrl);
+  if (!res.ok) {
+    throw new Error(`arXiv API returned HTTP ${res.status}: ${res.statusText}`);
+  }
+  const xml = await res.text();
+  const papers = parseArxivAtomFeed(xml);
+  if (papers.length === 0) {
+    throw new Error(`No paper found matching arXiv ID "${cleanId}".`);
+  }
+  return papers[0]!;
+}
+
+/**
  * Pure helper to construct the arXiv API search query URL.
  */
 export function buildArxivSearchUrl(

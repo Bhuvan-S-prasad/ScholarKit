@@ -8,12 +8,13 @@ import {
 import { McpToolHandler } from "./types.js";
 import { zodToJsonSchema } from "./utils/schema.js";
 import { logger } from "./logger.js";
+import { getAllTools } from "./tools/index.js";
 
 export class ScholarKitMcpServer {
   private server: Server;
   private tools: Map<string, McpToolHandler> = new Map();
 
-  constructor() {
+  constructor(autoRegisterTools = true) {
     this.server = new Server(
       {
         name: "scholarkit-local-mcp",
@@ -25,6 +26,10 @@ export class ScholarKitMcpServer {
         },
       }
     );
+
+    if (autoRegisterTools) {
+      this.registerTools(getAllTools());
+    }
 
     this.setupHandlers();
   }
