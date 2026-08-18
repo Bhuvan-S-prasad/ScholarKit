@@ -1,6 +1,6 @@
 # ScholarKit 🎓⚡
 
-> **A Model Context Protocol (MCP) Toolkit for Autonomous Research Paper Analysis, Literature Review Management, and Newsletter Delivery.**
+> **A Model Context Protocol (MCP) Toolkit for Autonomous Research Paper Analysis, Literature Review Management, and Research Briefing Delivery.**
 
 [![MCP](https://img.shields.io/badge/MCP-Model_Context_Protocol_Toolkit-FF6C37.svg?style=for-the-badge&logo=anthropic)](https://modelcontextprotocol.io/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6.svg?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
@@ -12,9 +12,9 @@
 
 ## 🌟 What is ScholarKit?
 
-**ScholarKit** is an **MCP-native research intelligence toolkit** designed to empower AI coding agents (Claude Desktop, Antigravity, Cursor, Windsurf) with deep academic research paper ingestion, comparative synthesis, literature review drafting, and automated Telegram digest broadcasting.
+**ScholarKit** is an **MCP-native research intelligence toolkit** designed to empower AI coding agents (Antigravity IDE, Claude Desktop, Cursor, Roo Code, Windsurf) with deep academic research paper ingestion, comparative synthesis, literature review drafting, and automated Telegram research briefing broadcasting.
 
-Built on the **Model Context Protocol (MCP)** with a **Shared-Core Monorepo Architecture**, ScholarKit transforms raw scientific papers into structured knowledge graphs that both AI agents and human researchers can query, rank, and publish.
+Built on the **Model Context Protocol (MCP)** with a **Shared-Core Monorepo Architecture**, ScholarKit transforms raw scientific papers into structured knowledge that both AI agents and human researchers can query, rank, synthesize, and publish.
 
 ```
                                ┌────────────────────────────────────────┐
@@ -35,7 +35,7 @@ Built on the **Model Context Protocol (MCP)** with a **Shared-Core Monorepo Arch
                                │       @scholarkit/core (Shared)       │
                                │   - Paper Ingestion & Extraction      │
                                │   - Literature Review & Ranking       │
-                               │   - Newsletter State Machine          │
+                               │   - Briefing Editorial State Machine  │
                                │   - OpenRouter Injected LLM Client    │
                                └───────────────────┬───────────────────┘
                                                    │
@@ -48,43 +48,67 @@ Built on the **Model Context Protocol (MCP)** with a **Shared-Core Monorepo Arch
 
 ---
 
-## 🔌 MCP Tools Reference
+## 🔌 MCP Tools Catalog (18 Tools)
 
-ScholarKit exposes its entire research engine as standardized **MCP Tools** over stdio or streamable HTTP:
+ScholarKit exposes its complete research engine as 18 standardized **MCP Tools** over stdio:
 
-### 📄 Paper Operations
+### 📄 Pillar 1: Research Paper Operations
+| MCP Tool | Description | Input Parameters |
+| :--- | :--- | :--- |
+| `ingest_paper` | Ingests research paper metadata from arXiv ID (e.g. `2312.12456`) or URL into Neon DB. | `arxivIdOrUrl: string` |
+| `extract_paper` | Extracts structured methodology, key findings, contributions, and limitations with confidence scoring. | `paperId: string`, `useStub?: boolean`, `model?: string` |
+| `analyze_papers` | Conducts cross-paper comparative matrix analysis, common limitations, and identifies research gaps. | `paperIds: string[]`, `model?: string` |
+| `list_papers` | Lists ingested papers with filtering by status and search query. | `status?: enum`, `search?: string`, `limit?: number` |
+| `get_paper` | Retrieves full paper metadata, abstract, and structured extraction record. | `paperIdOrSourceId: string` |
 
-| MCP Tool         | Description                                                                                                      | Input Parameters                                         |
-| :--------------- | :--------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------- |
-| `ingest_paper`   | Ingests a paper from arXiv ID or URL, parses Atom XML feed, and persists in Neon DB.                             | `identifier: string`                                     |
-| `extract_paper`  | Runs structured methodology, findings, contributions, and limitation extraction via LLM with confidence scoring. | `paperId: string`, `useStub?: boolean`, `model?: string` |
-| `analyze_papers` | Conducts cross-paper comparative matrix analysis and identifies research gaps.                                   | `paperIds: string[]`, `model?: string`                   |
-| `list_papers`    | Lists all ingested papers with extraction confidence and metadata.                                               | `limit?: number`                                         |
+### 📚 Pillar 2: Literature Review Operations
+| MCP Tool | Description | Input Parameters |
+| :--- | :--- | :--- |
+| `create_review_project` | Initializes a literature review project with research query, inclusion & exclusion criteria. | `title: string`, `query: string`, `description?: string`, `inclusionCriteria?: string[]`, `exclusionCriteria?: string[]` |
+| `search_arxiv_papers` | Queries arXiv Atom API, deduplicates against Neon DB, and auto-ingests candidate papers. | `query: string`, `maxResults?: number`, `projectId?: string`, `model?: string` |
+| `rank_papers` | Classifies and ranks candidate papers into 4 tiers (`highly_relevant`, `relevant`, `background`, `irrelevant`). | `projectId: string`, `paperIds?: string[]`, `model?: string` |
+| `draft_literature_review` | Synthesizes a structured markdown literature review draft (executive summary, citations, gaps). | `projectId: string`, `model?: string` |
+| `bridge_review_to_briefing` | Converts a literature review directly into a structured Research Briefing issue draft. | `projectId: string`, `model?: string` |
+| `list_review_projects` | Lists literature review projects and entry counts. | `status?: enum` |
 
-### 📚 Literature Review Operations
-
-| MCP Tool                  | Description                                                                                                        | Input Parameters                                                                 |
-| :------------------------ | :----------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------- |
-| `create_review_project`   | Initializes a new literature review project with inclusion & exclusion criteria.                                   | `title: string`, `query: string`, `inclusion?: string[]`, `exclusion?: string[]` |
-| `rank_papers`             | Classifies and ranks ingested papers (`highly_relevant`, `relevant`, `background`, `irrelevant`) against criteria. | `projectId: string`, `model?: string`                                            |
-| `draft_literature_review` | Generates a synthesized markdown literature review draft with thematic sections and citations.                     | `projectId: string`, `model?: string`                                            |
-
-### 📰 Newsletter & Publishing Operations
-
-| MCP Tool                       | Description                                                                                                    | Input Parameters                                          |
-| :----------------------------- | :------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------- |
-| `draft_newsletter`             | Assembles a structured newsletter draft from recent or specified papers.                                       | `title: string`, `paperIds?: string[]`, `target?: string` |
-| `transition_newsletter_status` | Advances the 7-stage review state machine (`submit_for_review`, `approve`, `schedule`, `start_sending`, etc.). | `newsletterId: string`, `action: string`                  |
-| `preview_newsletter`           | Generates Telegram-formatted HTML with 4096-character chunk boundary analysis.                                 | `newsletterId: string`                                    |
-| `send_newsletter`              | Dispatches newsletter chunks to Telegram chat/channel with 1-second rate-limit pacing.                         | `newsletterId: string`, `chatId?: string`                 |
+### 📰 Pillar 3: Research Briefing & Telegram Delivery Operations
+| MCP Tool | Description | Input Parameters |
+| :--- | :--- | :--- |
+| `draft_briefing` | Assembles a structured research briefing issue draft from recent papers or custom sections. | `title: string`, `paperIds?: string[]`, `target?: enum` |
+| `transition_briefing_status` | Advances the 7-stage editorial review state machine (`submit_for_review`, `approve`, `request_changes`, `schedule`, `start_sending`, etc.). | `briefingId: string`, `action: enum` |
+| `schedule_briefing` | Schedules an approved research briefing for future delivery (`now`, `+1h`, `+30m`, ISO timestamp). | `briefingId: string`, `time?: string` |
+| `dispatch_scheduled_briefings` | Evaluates queue and dispatches all due scheduled briefings to Telegram with 1s rate pacing. | `chatIdOverride?: string` |
+| `send_briefing` | Immediately publishes and dispatches a briefing to Telegram with 4096-char chunking. | `briefingId: string`, `chatId?: string` |
+| `preview_briefing_telegram` | Previews rendered Telegram HTML and 4096-character chunk boundaries. | `briefingId: string` |
+| `list_briefings` | Lists research briefings filtered by editorial review status. | `status?: enum` |
 
 ---
 
 ## ⚙️ Connecting to MCP Clients
 
-### 1. Claude Desktop Configuration
+### 1. Antigravity IDE Setup
+Antigravity automatically discovers ScholarKit via `.agents/mcp_config.json` in the workspace root, or you can register it globally in `~/.gemini/config/mcp_config.json`:
 
-Add ScholarKit to your `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "scholarkit": {
+      "command": "bun",
+      "args": ["run", "packages/local-mcp/src/index.ts"],
+      "env": {
+        "DATABASE_URL": "${DATABASE_URL}",
+        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}",
+        "OPENROUTER_MODEL": "${OPENROUTER_MODEL}",
+        "TELEGRAM_BOT_TOKEN": "${TELEGRAM_BOT_TOKEN}",
+        "TELEGRAM_CHAT_ID": "${TELEGRAM_CHAT_ID}"
+      }
+    }
+  }
+}
+```
+
+### 2. Claude Desktop Setup
+Add ScholarKit to `%APPDATA%\Claude\claude_desktop_config.json`:
 
 ```json
 {
@@ -102,7 +126,8 @@ Add ScholarKit to your `claude_desktop_config.json`:
 }
 ```
 
-### 2. Antigravity IDE / Cursor / Roo Code (`mcp.json`)
+### 3. Cursor / Roo Code / Windsurf (`mcp.json`)
+Add to your project root `mcp.json`:
 
 ```json
 {
@@ -118,52 +143,87 @@ Add ScholarKit to your `claude_desktop_config.json`:
 
 ---
 
-## 🏛️ The Three Functional Pillars
+## 🖥️ Interactive Dashboard (TUI)
 
-### 1. Research Paper Analyst
+ScholarKit includes a full terminal user interface (inspired by `lazygit` and `k9s`):
 
-- Direct **arXiv ingestion** with live Atom feed XML parsing.
-- Structured **methodology, dataset, key findings, and limitation** extraction.
-- **Extraction Confidence Evaluation**: Automatically detects ambiguous or low-confidence outputs to flag for human review.
-- Cross-paper **comparative synthesis** identifying shared limitations and future research opportunities.
+```bash
+bun run dev:cli tui
+```
 
-### 2. Literature Review Manager
+```text
+ ┌─────────────────────────────────────────────────────────────────────────────────────┐ 
+ │ ScholarKit │ Research Briefings      Model: gpt-4o-mini                  │ DB: Neon │ 
+ └─────────────────────────────────────────────────────────────────────────────────────┘ 
+                                                       
+  1. Papers  │   2. Reviews  │  [3. Briefings (Active)]
 
-- Research project tracking with **scoped inclusion and exclusion criteria**.
-- Automated **relevance classification** with LLM reasoning.
-- Synthesizes comprehensive markdown literature reviews with structured executive summaries, thematic sections, citations, and identified gaps.
+ ┌───────────────────┐ ┌───────────────────────────────────────────────────────────────┐ 
+ │ Briefings (1)     │ │ Briefing Details & Workflow                                   │ 
+ │                   │ │                                                               │ 
+ │ ▶ #1 AI Systems   │ │ #1 AI Systems Research Briefing                       [DRAFT] │ 
+ │                   │ │ Target: telegram_channel │ Updated: 2026-08-18                │ 
+ │ 1–1 of 1   P.1/1  │ │                                                               │ 
+ │                   │ │ Review Workflow Stepper:                                      │ 
+ │                   │ │ [● DRAFT] ──▶ [○ IN_REVIEW] ──▶ [○ APPROVED] ──▶              │ 
+ │                   │ │ [○ SCHEDULED] ──▶ [○ SENDING] ──▶ [○ SENT]                    │ 
+```
 
-### 3. Newsletter Operator & Telegram Delivery
-
-- Assembles multi-section digests with deep-dive spotlights and quick takes.
-- **7-Stage Review State Machine**:
-  ```text
-  draft ──submit──▶ in_review ──approve──▶ approved ──schedule──▶ scheduled ──send──▶ sending ──▶ sent
-    ▲                    │                                                                 │
-    └──request_changes───┘                                                             (err)──▶ failed ──retry
-  ```
-- **Telegram Broadcast Engine**: Automated 4096-character chunking and 1-message-per-second rate pacing to prevent bot rate limits.
+### Keyboard Navigation:
+- `1` / `2` / `3`: Switch views between **Papers**, **Reviews**, and **Briefings**.
+- `Tab`: Switch focus between Master List and Detail View.
+- `i` / `e`: Ingest paper from arXiv / Run LLM extraction.
+- `c` / `s` / `r` / `d` / `N`: Create review project, search arXiv, rank papers, draft review, bridge to briefing.
+- `n` / `t` / `a` / `S` / `w` / `p`: Draft briefing, transition status, approve, schedule, run worker, preview Telegram HTML.
 
 ---
 
-## 🏗️ Monorepo Architecture
+## 🏛️ The Three Functional Pillars
+
+### 1. Research Paper Analyst
+- Direct **arXiv ingestion** with live Atom XML parsing and duplicate prevention.
+- Structured **methodology, dataset, key findings, and limitation** extraction.
+- **Confidence Evaluation**: Flags extractions below 75% confidence for human review.
+- Cross-paper **comparative synthesis** identifying shared tradeoffs and research gaps.
+
+### 2. Literature Review Manager
+- Research project tracking with **scoped inclusion and exclusion criteria**.
+- Automated **4-tier relevance classification** (`highly_relevant`, `relevant`, `background`, `irrelevant`) with LLM reasoning.
+- Synthesizes comprehensive markdown literature reviews with structured executive summaries, thematic sections, citations, and identified gaps.
+- **Bridge to Briefing**: Direct 1-click transformation into a publishable briefing issue.
+
+### 3. Research Briefing Operator & Telegram Delivery
+- Assembles multi-section research digests with deep-dive spotlights and roundups.
+- **7-Stage Review State Machine**:
+  ```text
+  draft ──submit──▶ in_review ──approve──▶ approved ──schedule──▶ scheduled ──(worker)──▶ sending ──▶ sent
+    ▲                    │                                                                    │
+    └──request_changes───┘                                                                (err)──▶ failed ──retry
+  ```
+- **Telegram Broadcast Engine**: Automated 4096-character chunking and 1-second rate pacing to guarantee delivery without rate-limit errors.
+
+---
+
+## 🏗️ Monorepo Structure
 
 ```
 scholarkit/
 ├── packages/
 │   ├── core/                    # @scholarkit/core: Pure domain logic, Zod validation, OpenRouter client
-│   │   ├── src/operations/      # Pure operations: ingestion, extraction, analysis, literature, workflow, telegram
+│   │   ├── src/operations/      # Pure operations: ingestion, extraction, analysis, literature, briefing, telegram
 │   │   └── src/schemas.ts       # Runtime Zod validation contracts
 │   ├── db/                      # @scholarkit/db: Neon Serverless Postgres + Prisma ORM
-│   │   └── src/schema.prisma    # Models: Paper, Extraction, LitReview, Newsletter, Subscriber, DeliveryLog
-│   ├── cli/                     # @scholarkit/cli: Interactive terminal interface
-│   │   └── src/commands/        # CLI commands for paper, review, and newsletter
-│   └── local-mcp/               # @scholarkit/local-mcp: Stdio MCP server for local agents
+│   │   └── src/schema.prisma    # Models: Paper, PaperExtraction, LitReviewProject, Briefing, DeliveryLog
+│   ├── cli/                     # @scholarkit/cli: CLI and dual-pane TUI dashboard
+│   │   ├── src/commands/        # CLI subcommands: paper, review, briefing
+│   │   └── src/ui/              # Ink-powered reactive terminal UI
+│   └── local-mcp/               # @scholarkit/local-mcp: Stdio MCP server exposing 18 native tools
 ├── apps/
 │   └── remote-mcp/              # apps/remote-mcp: Hono streamable HTTP MCP server (Clerk auth + Webhooks)
 ├── skills/
 │   └── scholarkit-skill/        # Agent skill instructions & tool usage patterns
 ├── docker-compose.yml           # Disposable local Postgres (shadow DB & testing)
+├── mcp.json                     # Workspace MCP configuration
 └── tsconfig.json
 ```
 
@@ -172,13 +232,11 @@ scholarkit/
 ## 🚀 Quick Start
 
 ### 1. Prerequisites
-
 - **[Bun](https://bun.sh/)** (`>= 1.1.0`)
-- **[Neon PostgreSQL](https://neon.tech/)** database account
+- **[Neon PostgreSQL](https://neon.tech/)** database
 - **[OpenRouter API Key](https://openrouter.ai/)**
 
 ### 2. Clone & Setup
-
 ```bash
 git clone https://github.com/Bhuvan-S-prasad/ScholarKit.git
 cd ScholarKit
@@ -186,91 +244,59 @@ bun install
 ```
 
 ### 3. Configure `.env`
-
 ```bash
 cp .env.example .env
 ```
 
 ```env
-# Database (Neon Serverless Postgres)
+# Database (Neon Serverless Postgres - Pooled)
 DATABASE_URL="postgresql://user:password@ep-xyz-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require&pgbouncer=true"
 DIRECT_URL="postgresql://user:password@ep-xyz.us-east-2.aws.neon.tech/neondb?sslmode=require"
 
 # LLM Provider (OpenRouter)
 OPENROUTER_API_KEY="sk-or-v1-..."
-OPENROUTER_MODEL="openai/gpt-oss-20b:free" # Or anthropic/claude-3.5-sonnet, google/gemini-2.5-flash
+OPENROUTER_MODEL="openai/gpt-4o-mini" # Or anthropic/claude-3.5-sonnet, google/gemini-2.5-flash
 
 # Telegram Bot (Optional for Publishing)
 TELEGRAM_BOT_TOKEN="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
 TELEGRAM_CHAT_ID="@your_channel"
 ```
 
-### 4. Apply Database Migrations
-
+### 4. Apply Database Schema
 ```bash
-bun run --filter @scholarkit/db migrate:dev --name init
+bun run --filter @scholarkit/db db:push
 ```
 
 ---
 
-## 💻 CLI Usage
-
-In addition to MCP tool execution, ScholarKit includes a standalone CLI:
+## 💻 CLI Commands
 
 ```bash
-bun run dev:cli --help
-```
-
-### 📄 Paper Commands
-
-```bash
-# Ingest arXiv paper
+# 📄 Paper Commands
 bun run dev:cli paper ingest 2312.12456
-
-# List ingested papers
+bun run dev:cli paper extract 2312.12456
+bun run dev:cli paper analyze <paper-id-1> <paper-id-2>
 bun run dev:cli paper list
 
-# Extract methodology & findings (Deterministic offline stub)
-bun run dev:cli paper extract 2312.12456 --stub
-
-# Extract with OpenRouter LLM
-bun run dev:cli paper extract 2312.12456 --model "openai/gpt-oss-20b:free"
-
-# Multi-paper comparative analysis
-bun run dev:cli paper analyze 2312.12456 2401.05678
-```
-
-### 📚 Literature Review Commands
-
-```bash
-# Initialize a review project
-bun run dev:cli review init "Consumer GPU LLM Serving" \
-  -q "LLM inference optimizations on consumer GPUs" \
-  -i "Requires GPU-CPU hybrid strategies" "Evaluates latency" \
-  -e "Pre-2022 papers"
-
-# Rank ingested papers against criteria
+# 📚 Literature Review Commands
+bun run dev:cli review init "Speculative Decoding LLM Inference" -q "Speculative Decoding"
+bun run dev:cli review search <project-id>
 bun run dev:cli review rank <project-id>
+bun run dev:cli review draft <project-id>
+bun run dev:cli review to-briefing <project-id>
 
-# Generate markdown literature review draft
-bun run dev:cli review draft <project-id> -o "./review_draft.md"
-```
+# 📰 Research Briefing & Publishing Commands
+bun run dev:cli briefing draft "ScholarKit Research Briefing: Issue 1"
+bun run dev:cli briefing list
+bun run dev:cli briefing transition <briefing-id> submit_for_review
+bun run dev:cli briefing transition <briefing-id> approve
+bun run dev:cli briefing schedule <briefing-id> +1h
+bun run dev:cli briefing worker --run-once
+bun run dev:cli briefing preview <briefing-id>
+bun run dev:cli briefing send <briefing-id>
 
-### 📰 Newsletter & Publishing Commands
-
-```bash
-# Draft newsletter issue
-bun run dev:cli newsletter draft "ScholarKit Weekly: Issue 1"
-
-# Advance state machine: submit -> approve
-bun run dev:cli newsletter transition <id> submit_for_review
-bun run dev:cli newsletter transition <id> approve
-
-# Preview Telegram HTML chunk boundaries
-bun run dev:cli newsletter preview <id>
-
-# Dispatch to Telegram channel
-bun run dev:cli newsletter send <id> --chat-id "@my_channel"
+# 🖥️ Interactive Dashboard
+bun run dev:cli tui
 ```
 
 ---
@@ -278,22 +304,27 @@ bun run dev:cli newsletter send <id> --chat-id "@my_channel"
 ## 🧪 Testing
 
 ```bash
-# Run unit tests across pure core operations
+# Run all unit tests (Core schemas & operations)
 bun test packages/core
+
+# Run Local MCP server test suite (Tool registration & stdio handshake)
+bun test packages/local-mcp
+
+# Run interactive MCP Stdio test client
+bun run packages/local-mcp/test/test-client.ts
 ```
 
 ---
 
 ## 🛠️ Technology Stack
 
-| Layer           | Technology                                                          | Purpose                                                     |
-| :-------------- | :------------------------------------------------------------------ | :---------------------------------------------------------- |
-| **Protocol**    | **[Model Context Protocol (MCP)](https://modelcontextprotocol.io)** | Native tool abstraction for AI agents                       |
-| **Runtime**     | **[Bun](https://bun.sh)**                                           | Fast package manager, TypeScript runtime, and test runner   |
-| **Validation**  | **[Zod](https://zod.dev)**                                          | Strict runtime schemas and validated LLM JSON contracts     |
-| **Database**    | **[Neon Postgres](https://neon.tech)**                              | Serverless cloud PostgreSQL with connection pooling         |
-| **ORM**         | **[Prisma](https://prisma.io)**                                     | Type-safe schema migrations and querying                    |
-| **LLM Gateway** | **[OpenRouter](https://openrouter.ai)**                             | Unified API for Claude, GPT, Llama, Gemini, and open models |
-| **Delivery**    | **[Telegram Bot API](https://core.telegram.org/bots/api)**          | HTML digest publishing with rate pacing                     |
-
----
+| Layer | Technology | Purpose |
+| :--- | :--- | :--- |
+| **Protocol** | **[Model Context Protocol (MCP)](https://modelcontextprotocol.io)** | Native tool abstraction for AI coding agents |
+| **Runtime** | **[Bun](https://bun.sh)** | Fast package manager, TypeScript runtime, and test runner |
+| **Validation** | **[Zod](https://zod.dev)** | Strict runtime schemas and validated LLM JSON contracts |
+| **Database** | **[Neon Postgres](https://neon.tech)** | Serverless cloud PostgreSQL with connection pooling |
+| **ORM** | **[Prisma](https://prisma.io)** | Type-safe schema migrations and relational queries |
+| **LLM Gateway** | **[OpenRouter](https://openrouter.ai)** | Unified API for Claude, GPT, Llama, Gemini, and reasoning models |
+| **Terminal UI** | **[Ink](https://github.com/vadimdemedes/ink)** | React-based reactive interactive terminal dashboard |
+| **Delivery** | **[Telegram Bot API](https://core.telegram.org/bots/api)** | HTML digest publishing with chunking and rate pacing |
